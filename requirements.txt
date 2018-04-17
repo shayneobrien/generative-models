@@ -1,0 +1,5 @@
+ipython
+jupyter
+torchvision
+matplotlib
+tqdm
