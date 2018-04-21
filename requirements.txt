@@ -3,3 +3,5 @@ jupyter
 torchvision
 matplotlib
 tqdm
+torch
+torchvision
