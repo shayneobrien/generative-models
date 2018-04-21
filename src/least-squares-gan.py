@@ -36,7 +36,7 @@ class Generator(nn.Module):
     def __init__(self, image_size, hidden_dim, z_dim):
         """ Generator. Input is noise, output is a generated image. """
         super(Generator, self).__init__()
-        self.linear = nn.Linear(z, hidden_dim)
+        self.linear = nn.Linear(z_dim, hidden_dim)
         self.generate = nn.Linear(hidden_dim, image_size)
         
     def forward(self, x):
@@ -46,22 +46,22 @@ class Generator(nn.Module):
         
 class Discriminator(nn.Module):
     def __init__(self, image_size, hidden_dim, output_dim):
-        """ Discriminator / Critic (not trained to classify). Input is an image (real or generated), output is P(generated). """
+        """ Critic (not trained to classify). Input is an image (real or generated), output is approximate LS divergence """
         super(Discriminator, self).__init__()
         self.linear = nn.Linear(image_size, hidden_dim)
         self.discriminate = nn.Linear(hidden_dim, output_dim)     
         
     def forward(self, x):
         activated = F.relu(self.linear(x))
-        discrimination = F.relu(self.discriminate(activated))
+        discrimination = F.sigmoid(self.discriminate(activated))
         return discrimination
     
 class LSGAN(nn.Module):
     def __init__(self, image_size, hidden_dim, z_dim, output_dim = 1):
-        """ Super class to contain both Discriminator (D) and Generator (G) """
+        """ Super class to contain both Discriminator / Critic (D) and Generator (G) """
         super(LSGAN, self).__init__()
         self.G = Generator(image_size, hidden_dim, z_dim)
-        self.D = Discriminator(image_size, hidden_dim)
+        self.D = Discriminator(image_size, hidden_dim, output_dim)
         
         self.z_dim = z_dim
             
@@ -72,7 +72,7 @@ class Trainer:
         self.val_iter = val_iter
         self.test_iter = test_iter
     
-    def train(self, model, num_epochs, G_lr = 1e-4, D_lr = 1e-4, D_steps = 2):
+    def train(self, model, num_epochs, G_lr = 1e-4, D_lr = 1e-4, D_steps = 1):
         """ Train a Least Squares GAN
             Logs progress using G loss, D loss, visualizations of Generator output.
 
@@ -81,15 +81,17 @@ class Trainer:
             num_epochs: int, number of epochs to train for
             G_lr: float, learning rate for generator's Adam optimizer (default 1e-4)
             D_lr: float, learning rate for discriminator's Adam optimizer (default 1e-4)
-            D_steps: int, training step ratio for how often to train D compared to G (default 2)
+            D_steps: int, training step ratio for how often to train D compared to G (default 1)
         Outputs:
             model: trained LSGAN instance """
+        # Adam optimizers
         G_optimizer = torch.optim.Adam(params=[p for p in model.G.parameters() if p.requires_grad], lr=G_lr)
         D_optimizer = torch.optim.Adam(params=[p for p in model.D.parameters() if p.requires_grad], lr=D_lr)
         
         # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
         epoch_steps = int(np.ceil(len(train_iter) / (D_steps))) 
         
+        # Begin training
         for epoch in tqdm_notebook(range(1, num_epochs + 1)):
             model.train()
             G_losses, D_losses = [], []
@@ -107,7 +109,7 @@ class Trainer:
                     # Zero out gradients for D
                     D_optimizer.zero_grad()
 
-                    # Train the discriminator using samples from the generator, compute sigmoid cross entropy loss to get D_loss = loss(D(x)) + loss(D(G(x)))
+                    # Train the discriminator using L2 loss
                     D_loss = self.train_D(model, images)
                     
                     # Update parameters
@@ -123,8 +125,7 @@ class Trainer:
                 # TRAINING G: Zero out gradients for G. 
                 G_optimizer.zero_grad()
 
-                # Train the generator using predictions from D on the noise compared to true image labels
-                # (learn to generate examples from noise that fool the discriminator)   
+                # Train the generator using L2 loss
                 G_loss = self.train_G(model, images)             
 
                 # Update parameters
@@ -146,43 +147,46 @@ class Trainer:
     
     def train_D(self, model, images):
         """ Run 1 step of training for discriminator
-            
-            G_noise = randomly generated noise, x'
-            G_output = G(x'), generated images from noise
-            DX_score = D(x), probability x is generated where x are real images
-            DG_score = D(G(x')), probability G(x') is a generation where x' is noise
-        """      
-        
-        # ORIGINAL CRITIC STEPS:
+
+        Input:
+            model: model instantiation
+            images: batch of images (reshaped to [batch_size, 784])
+        Output:
+            D_loss: L2 loss for discriminator, 0.50 * E[(D(x) - a)^2] + 0.50 * E[(D(G(z)) - b)^2], 
+                    where a and b are labels for generated (0) and real (1) data
+        """ 
         # Sample noise, an output from the generator
         noise = self.compute_noise(images.shape[0], model.z_dim)
         G_output = model.G(noise)
         
         # Use the discriminator to sample real, generated images
-        DX_score = model.D(images) # D(x), "real"
-        DG_score = model.D(G_output) # D(G(x')), "fake"
+        DX_score = model.D(images) # D(x)
+        DG_score = model.D(G_output) # D(G(z))
         
-        # Compute L2 loss
-        D_loss = 0.5 * (torch.mean((DX_score - 1)**2) + torch.mean(DG_score**2))
+        # Compute L2 loss for D
+        D_loss = (0.50 * torch.mean((DX_score - 1)**2)) + (0.50 * torch.mean(DG_score**2))
         
         return D_loss
     
     def train_G(self, model, images):
         """ Run 1 step of training for generator
         
-            G_noise = randomly generated noise, x'
-            G_output = G(x')
-            DG_score = D(G(x'))
-        """
+        Input:
+            model: instantiated GAN
+            images: batch of images reshaped to [batch_size, -1]    
+        Output:
+            G_loss: L2 loss for G,  0.50 * E[(D(G(z)) - c)^2], 
+                    where c is the label for true images (1)
+        """   
         # Get noise, classify it using G, then classify the output of G using D.
-        G_noise = self.compute_noise(images.shape[0], model.z_dim) # x'
-        G_output = model.G(G_noise) # G(x')
-        DG_score = model.D(G_output) # D(G(x'))
+        noise = self.compute_noise(images.shape[0], model.z_dim) # z
+        G_output = model.G(noise) # G(z)
+        DG_score = model.D(G_output) # D(G(z))
         
-        # Compute L2 loss
-        G_loss = 0.5 * torch.mean((DG_score - 1)**2)
+        # Compute L2 loss for G,
+        G_loss = 0.50 * torch.mean((DG_score - 1)**2)
         
-        return DG_score
+        return G_loss
     
     def compute_noise(self, batch_size, image_size):
         """ Compute random noise for the generator to learn to make images from """
@@ -225,9 +229,9 @@ class Trainer:
         model.load_state_dict(state)
         return model
 
-model = LSGAN(image_size = 784, hidden_dim = 256, z_dim = 100)
+model = LSGAN(image_size = 784, hidden_dim = 256, z_dim = 128)
 if torch.cuda.is_available():
     model = model.cuda()
 trainer = Trainer(train_iter, val_iter, test_iter)
-model = trainer.train(model = model, num_epochs = 100, G_lr = 1e-3, D_lr = 1e-3, D_steps = 3)
+model = trainer.train(model = model, num_epochs = 25, G_lr = 1e-4, D_lr = 1e-4, D_steps = 1)
 

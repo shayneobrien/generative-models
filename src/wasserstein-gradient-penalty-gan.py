@@ -3,12 +3,13 @@ Wasserstein GAN with Gradient Penalties ('improved methods for WGAN training')
 
 https://arxiv.org/pdf/1704.00028.pdf
 
-Proposes a gradient penalty to add to the discriminator loss as an alternative method for
-enforcing the Lipschitz constraint. This penalty does not suffer from the biasing
-of the discriminator toward simple funtions due to weight clipping. Additionally, the
-reformulation of the discriminator in this way makes batch normalization not necessary. This
-is notable because batch normalization implicitly changes the discriminator's problem from
-mapping one-to-one to many-to-many.
+Proposes a gradient penalty to add to the WGAN discriminator loss as an alternative method for enforcing 
+the Lipschitz constraint (previously done via weight clipping). This penalty does not suffer from the biasing
+of the discriminator toward simple funtions due to weight clipping. Additionally, the reformulation of the 
+discriminator by adding a gradient penaltyterm makes batch normalization not necessary. This is notable because 
+batch normalization implicitly changes the discriminator's problem from mapping one-to-one to many-to-many.
+
+Note the relu in the discriminator instead of sigmoid.
 
 """
 import torch, torchvision
@@ -46,7 +47,7 @@ class Generator(nn.Module):
         
 class Discriminator(nn.Module):
     def __init__(self, image_size, hidden_dim, output_dim):
-        """ Discriminator / Critic (not trained to classify). Input is an image (real or generated), output is P(generated). """
+        """ Critic (not trained to classify). Input is an image (real or generated), output is the approximate Wasserstein Distance between z~P(G(z)) and real. """
         super(Discriminator, self).__init__()
         self.linear = nn.Linear(image_size, hidden_dim)
         self.discriminate = nn.Linear(hidden_dim, output_dim)     
@@ -58,7 +59,7 @@ class Discriminator(nn.Module):
     
 class WGANGP(nn.Module):
     def __init__(self, image_size, hidden_dim, z_dim, output_dim = 1):
-        """ Super class to contain both Discriminator (D) and Generator (G) """
+        """ Super class to contain both Discriminator / Critic (D) and Generator (G) """
         super(WGANGP, self).__init__()
         self.G = Generator(image_size, hidden_dim, z_dim)
         self.D = Discriminator(image_size, hidden_dim, output_dim)
@@ -72,7 +73,7 @@ class Trainer:
         self.val_iter = val_iter
         self.test_iter = test_iter
     
-    def train(self, model, num_epochs, G_lr = 5e-4, D_lr = 5e-4, D_steps = 5):
+    def train(self, model, num_epochs, G_lr = 1e-4, D_lr = 1e-4, D_steps = 5):
         """ Train a Wasserstein GAN with Gradient Penalty
             Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
 
@@ -84,8 +85,10 @@ class Trainer:
             D_steps: training step ratio for how often to train D compared to G (default 5)
         Outputs:
             model: trained WGANGP instance """
-        G_optimizer = torch.optim.RMSprop(params=[p for p in model.G.parameters() if p.requires_grad], lr=G_lr)
-        D_optimizer = torch.optim.RMSprop(params=[p for p in model.D.parameters() if p.requires_grad], lr=D_lr)
+        
+        # Adam optimizers
+        G_optimizer = torch.optim.Adam(params=[p for p in model.G.parameters() if p.requires_grad], lr=G_lr)
+        D_optimizer = torch.optim.Adam(params=[p for p in model.D.parameters() if p.requires_grad], lr=D_lr)
         
         # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
         epoch_steps = int(np.ceil(len(train_iter) / (D_steps))) 
@@ -107,8 +110,8 @@ class Trainer:
                     # Zero out gradients for D
                     D_optimizer.zero_grad()
 
-                    # Train the discriminator using samples from the generator
-                    D_loss = self.train_D_step(model, images)
+                    # Train the discriminator to learn to approximate the Wasserstein distance between real and generated distributions
+                    D_loss = self.train_D(model, images)
                     
                     # Update parameters
                     D_loss.backward()
@@ -123,13 +126,8 @@ class Trainer:
                 # TRAINING G: Zero out gradients for G. 
                 G_optimizer.zero_grad()
 
-                # Sample from the generator, reclassify using discriminator to train generator. Keep same batch as
-                # the last step for training D
-                DG_score = self.train_G_step(model, images)
-
-                # Train the generator using predictions from D on the noise compared to true image labels
-                # (learn to generate examples from noise that fool the discriminator)
-                G_loss = -(torch.mean(DG_score))
+                # Train the generator to (roughly) minimize the approximated Wasserstein distance
+                G_loss = self.train_G(model, images)
 
                 # Update parameters
                 G_loss.backward()
@@ -148,23 +146,24 @@ class Trainer:
             
         return model
     
-    def train_D_step(self, model, images, LAMBDA = 10):
+    def train_D(self, model, images, LAMBDA = 10):
         """ Run 1 step of training for discriminator
-            
-            G_noise = randomly generated noise, x'
-            G_output = G(x'), generated images from noise
-            DX_score = D(x), probability x is generated where x are real images
-            DG_score = D(G(x')), probability G(x') is a generation where x' is noise
-        """      
+
+        Input:
+            model: model instantiation
+            images: batch of images (reshaped to [batch_size, 784])
+        Output:
+            D_loss: wasserstein loss for discriminator, -E[D(x)] + E[D(G(z))] + λE[(||∇ D(εx + (1 − εG(z)))|| - 1)^2]
+        """   
         
-        # ORIGINAL CRITIC:
+        # ORIGINAL CRITIC STEPS:
         # Sample noise, an output from the generator
         noise = self.compute_noise(images.shape[0], model.z_dim)
         G_output = model.G(noise)
         
         # Use the discriminator to sample real, generated images
-        DX_score = model.D(images) # D(x), "real"
-        DG_score = model.D(G_output) # D(G(x')), "fake"
+        DX_score = model.D(images) # D(z)
+        DG_score = model.D(G_output) # D(G(z))
         
         # GRADIENT PENALTY:
         # Uniformly sample along one straight line per each batch entry. 
@@ -188,23 +187,29 @@ class Trainer:
         # Full gradient penalty
         grad_penalty = LAMBDA * torch.mean((gradients.norm(2, dim = 1) - 1) **2)
         
+        # Compute WGAN-GP loss for D
         D_loss = torch.mean(DG_score) - torch.mean(DX_score) + grad_penalty
         
         return D_loss
     
-    def train_G_step(self, model, images):
+    def train_G(self, model, images):
         """ Run 1 step of training for generator
         
-            G_noise = randomly generated noise, x'
-            G_output = G(x')
-            DG_score = D(G(x'))
-        """
-        G_noise = self.compute_noise(images.shape[0], model.z_dim) # x'
-        G_output = model.G(G_noise) # G(x')
-        DG_score = model.D(G_output) # D(G(x'))
+        Input:
+            model: instantiated GAN
+            images: batch of images reshaped to [batch_size, -1]    
+        Output:
+            G_loss: wasserstein loss for generator, -E[D(G(z))]
+        """   
+        # Get noise, classify it using G, then classify the output of G using D.
+        noise = self.compute_noise(images.shape[0], model.z_dim) # z
+        G_output = model.G(noise) # G(z)
+        DG_score = model.D(G_output) # D(G(z))
         
+        # Compute WGAN-GP loss for G (same loss as WGAN)
         G_loss = -(torch.mean(DG_score))
-        return DG_score
+        
+        return G_loss
     
     def compute_noise(self, batch_size, z_dim):
         """ Compute random noise for the generator to learn to make images from """
@@ -247,9 +252,9 @@ class Trainer:
         model.load_state_dict(state)
         return model
 
-model = WGANGP(image_size = 784, hidden_dim = 400, z_dim = 256)
+model = WGANGP(image_size = 784, hidden_dim = 256, z_dim = 128) 
 if torch.cuda.is_available():
     model = model.cuda()
 trainer = Trainer(train_iter, val_iter, test_iter)
-model = trainer.train(model = model, num_epochs = 100)
+model = trainer.train(model = model, num_epochs = 25, G_lr = 1e-4, D_lr = 1e-4, D_steps = 5)
 

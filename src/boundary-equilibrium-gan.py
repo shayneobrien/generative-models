@@ -1,13 +1,33 @@
-""" (DRAGAN)
-Deep Regret Analytic GAN
+""" (BEGAN)
+Boundary Equilibrium GAN
 
-https://arxiv.org/pdf/1705.07215.pdf
+https://arxiv.org/pdf/1703.10717.pdf
 
-Proposes to study GANs from a regret minimization perspective. This implementation is very similar to WGAN GP, in that
-it is applying a gradient penalty to try and get at an improved training objective based on how D and G would optimally
-perform. They apply the gradient penalty only close to the real data manifold (whereas WGAN GP picks the gradient
-location on a random line between a real and randomly generated fake sample). For further details, see Section 2.5 of
-the paper.
+The main idea is the following: matching the distributions of the reconstruction losses is a solid approximation
+to matching the generated and real data distributions. While this is the idea, it is crucial to note that the
+reconstruction losses are NOT what we are trying to minimize. Instead, we derive the real loss from the Wasserstein
+distance between these reconstruction losses. 
+
+BEGAN uses an autoencoder as a discriminator (note this difference in ths architecture compared to other GANs) 
+and optimizes a lower bound of the Wasserstein distance between auto-encoder loss distributions on real 
+and fake data (as opposed to the sample distributions of the generator and real data). 
+
+During training:
+
+    1) D (here, an autoencoder) reconstructs real images and is optimized to minimize this reconstruction loss.
+    2) As a byproduct of D's optimization, the reconstruction loss of generated images is increased. We optimize G
+    to minimize the reconstruction loss of the generated images. 
+
+This setup trains D and G simultaneously while preserving the adversarial setup.
+
+The authors introduce an additional hyperparameter γ ∈ [0,1] to maintain the equilibrium between the D and G.
+Equilibrium between D and G occurs when E[loss(D(x))] == E[loss(D(G(z)))]. This γ is useful because an equilibrium
+is necessary for successful training of the BEGAN, and "the discriminator has two competing goals: auto-encode 
+real images and discriminate real from generated images. The γ term lets us balance these two goals. Lower values 
+of γ lead to lower image diversity because the discriminator focuses more heavily on auto-encoding real images."
+We define γ = E[loss(D(G(z)))] / E[loss(D(x))]. Then E[loss(D(G(z)))] == γE[loss(D(x))]. To keep this balance,
+the authors introduce a variable kt ∈ [0,1] to control how much emphasis to put on loss(D(G(z))) during gradient
+descent. 
 
 """
 import torch, torchvision
@@ -15,7 +35,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-import os
+import os, copy
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm_notebook
@@ -39,31 +59,34 @@ class Generator(nn.Module):
         self.generate = nn.Linear(hidden_dim, image_size)
         
     def forward(self, x):
-        activated = F.relu(self.linear(x))
+        activated = F.elu(self.linear(x))
         generation = F.sigmoid(self.generate(activated))
         return generation
         
 class Discriminator(nn.Module):
-    def __init__(self, image_size, hidden_dim, output_dim):
-        """ Critic (not trained to classify). Input is an image (real or generated), output is approximate Wasserstein distance. """
+    def __init__(self, image_size, hidden_dim):
+        """ Autoencoder. Input is an image (real, generated), output is the reconstructed image. """
         super(Discriminator, self).__init__()
-        self.linear = nn.Linear(image_size, hidden_dim)
-        self.discriminate = nn.Linear(hidden_dim, output_dim)     
+        self.encoder = nn.Linear(image_size, hidden_dim)
+        self.hidden = nn.Linear(hidden_dim, hidden_dim)
+        self.decoder = nn.Linear(hidden_dim, image_size)     
         
     def forward(self, x):
-        activated = F.relu(self.linear(x))
-        discrimination = F.sigmoid(self.discriminate(activated))
-        return discrimination
+        encoded = F.elu(self.encoder(x))
+        encoded = F.elu(self.hidden(encoded))
+        encoded = F.elu(self.hidden(encoded))
+        reconstructed = F.sigmoid(self.decoder(encoded))
+        return reconstructed
     
-class DRAGAN(nn.Module):
-    def __init__(self, image_size, hidden_dim, z_dim, output_dim = 1):
+class BEGAN(nn.Module):
+    def __init__(self, image_size, hidden_dim, z_dim):
         """ Super class to contain both Discriminator / Critic (D) and Generator (G) """
-        super(DRAGAN, self).__init__()
+        super(BEGAN, self).__init__()
         self.G = Generator(image_size, hidden_dim, z_dim)
-        self.D = Discriminator(image_size, hidden_dim, output_dim)
+        self.D = Discriminator(image_size, hidden_dim)
         
         self.z_dim = z_dim
-            
+
 class Trainer:
     def __init__(self, train_iter, val_iter, test_iter):
         """ Object to hold data iterators, train a GAN variant """
@@ -71,21 +94,29 @@ class Trainer:
         self.val_iter = val_iter
         self.test_iter = test_iter
     
-    def train(self, model, num_epochs, G_lr = 1e-4, D_lr = 1e-4, D_steps = 1):
+    def train(self, model, num_epochs, G_lr = 1e-4, D_lr = 1e-4, D_steps = 1, GAMMA = 0.50, LAMBDA = 1e-3, K = 0.00):
         """ Train a Least Squares GAN
             Logs progress using G loss, D loss, visualizations of Generator output.
 
         Inputs:
-            model: class, initialized DRAGAN module
+            model: class, initialized BEGAN module
             num_epochs: int, number of epochs to train for
             G_lr: float, learning rate for generator's Adam optimizer (default 1e-4)
             D_lr: float, learning rate for discriminator's Adam optimizer (default 1e-4)
             D_steps: int, training step ratio for how often to train D compared to G (default 1)
+            GAMMA: float, hyperparameter to balance equilibrium between G and D learning objectives (default 0.50)
+            LAMBDA: float, weight D loss for updating K (default 1e-3)
+            K: float, initialization for how much to emphasize loss(D(G(z))) in total D loss (default 0.00)
         Outputs:
-            model: trained DRAGAN instance """
+            model: trained BEGAN instance """
+        
         # Adam optimizers
         G_optimizer = torch.optim.Adam(params=[p for p in model.G.parameters() if p.requires_grad], lr=G_lr)
         D_optimizer = torch.optim.Adam(params=[p for p in model.D.parameters() if p.requires_grad], lr=D_lr)
+ 
+        # Reduce learning rate by factor of 2 if convergence_metric stops decreasing by a threshold within a range of at least five epochs
+        G_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(G_optimizer, factor = 0.50, threshold = 0.01, patience = 5 * len(train_iter))
+        D_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(D_optimizer, factor = 0.50, threshold = 0.01, patience = 5 * len(train_iter))
         
         # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
         epoch_steps = int(np.ceil(len(train_iter) / (D_steps))) 
@@ -108,8 +139,8 @@ class Trainer:
                     # Zero out gradients for D
                     D_optimizer.zero_grad()
 
-                    # Train the discriminator
-                    D_loss = self.train_D(model, images)
+                    # Train the discriminator using BEGAN loss
+                    D_loss, DX_loss, DG_loss = self.train_D(model, images, K)
         
                     # Update parameters
                     D_loss.backward()
@@ -124,7 +155,7 @@ class Trainer:
                 # TRAINING G: Zero out gradients for G. 
                 G_optimizer.zero_grad()
 
-                # Train the generator
+                # Train the generator using BEGAN loss
                 G_loss = self.train_G(model, images)
               
                 # Update parameters
@@ -134,9 +165,18 @@ class Trainer:
                 # Save relevant output for progress logging
                 G_losses.append(G_loss)
                 
+                # PROPORTIONAL CONTROL THEORY: Dynamically update K, log convergence measure 
+                convergence_measure = (DX_loss + torch.abs(GAMMA * DX_loss - DG_loss)).data[0]
+                K_update = (K + LAMBDA * (GAMMA * DX_loss - DG_loss)).data[0]
+                K = min(max(0, K_update), 1)
+                
+                # Learning rate scheduler
+                D_scheduler.step(convergence_measure)
+                G_scheduler.step(convergence_measure)
+                                
             # Progress logging
-            print ("Epoch[%d/%d], G Loss: %.4f, D Loss: %.4f"
-                   %(epoch, num_epochs, np.mean(G_losses), np.mean(D_losses)))
+            print ("Epoch[%d/%d], G Loss: %.4f, D Loss: %.4f, K: %.4f, Convergence Measure: %.4f"
+                   %(epoch, num_epochs, np.mean(G_losses), np.mean(D_losses), K, convergence_measure))
             
             # Visualize generator progress
             fig = self.generate_images(model, epoch)
@@ -144,58 +184,32 @@ class Trainer:
             
         return model
     
-    def train_D(self, model, images, LAMBDA = 10, K = 1, C = 1):
+    def train_D(self, model, images, K):
         """ Run 1 step of training for discriminator
 
         Input:
             model: model instantiation
             images: batch of images (reshaped to [batch_size, 784])
         Output:
-            D_loss: DRAGAN loss for discriminator, -E[log(D(x))] - E[log(1 - D(G(z)))] + λE[(||∇ D(G(z))|| - 1)^2]
-        """     
+            D_loss: BEGAN loss for discriminator, E[||x - AE(x)||1] - K*E[G(z) - AE(G(z))]
+        """      
         
-        # NON-SATURATING LOSS STEPS:
-        # Generate labels for the real and generated images (real is 1, generated is 0)
-        X_labels = to_var(torch.ones(images.shape[0], 1)) 
-        G_labels = to_var(torch.zeros(images.shape[0], 1))
-        
-        # Classify the real batch images, get the loss for these 
-        DX_score = model.D(images)
-        DX_loss = F.binary_cross_entropy(DX_score, X_labels)
+        # Reconstruct the images using D (autoencoder), get reconstruction loss
+        DX_reconst = model.D(images)
+        DX_loss = torch.mean(torch.abs(DX_reconst - images)) # ||DX_loss||1 == DX_loss
         
         # Sample outputs from the generator
         noise = self.compute_noise(images.shape[0], model.z_dim)
         G_output = model.G(noise)
         
-        # Classify the fake batch images, get the loss for these (labels being all 0, since they are fake)
-        DG_score = model.D(G_output)
-        DG_loss = F.binary_cross_entropy(DG_score, G_labels)
+        # Reconstruct the generation using D (autoencoder)
+        DG_reconst = model.D(G_output)
+        DG_loss = torch.mean(torch.abs(DG_reconst - G_output)) # ||DG_loss||1 == DG_loss
         
-        # GRADIENT PENALTY STEPS:
-        # Uniformly sample along one straight line per each batch entry. 
-        delta = torch.rand(images.shape[0], 1).expand(images.size())
-
-        # Generate images from the noise, ensure unit 
-        G_interpolation = to_var(delta * images.data + (1 - delta) * (images.data + C * images.data.std() * torch.rand(images.size())))
-        G_interpolation.requires_grad = True
-
-        D_interpolation = model.D(G_interpolation)
-
-        # Compute the gradients of D with respect to the noise generated input
-        gradients = torch.autograd.grad(outputs = D_interpolation, 
-                            inputs = G_interpolation,
-                            grad_outputs = torch.ones(D_interpolation.size()), # TODO: cuda
-                            only_inputs = True,
-                            create_graph = True,
-                            retain_graph = True,)[0]
-
-        # Full gradient penalty
-        grad_penalty = LAMBDA * torch.mean((gradients.norm(2, dim = 1) - K) **2)
+        # Put it all together
+        D_loss = DX_loss - (K * DG_loss)
         
-        # Compute DRAGAN loss for D
-        D_loss = DX_loss + DG_loss + grad_penalty
-        
-        return D_loss
+        return D_loss, DX_loss, DG_loss
     
     def train_G(self, model, images):
         """ Run 1 step of training for generator
@@ -204,18 +218,16 @@ class Trainer:
             model: instantiated GAN
             images: batch of images reshaped to [batch_size, -1]    
         Output:
-            G_loss: DRAGAN (non-saturating) loss for G, -E[log(D(G(z)))]
+            G_loss: BEGAN loss for G, E[||G(z) - AE(G(Z))||1]
         """   
-        # Generate labels for the generator batch images (all 0, since they are fake)
-        G_labels = to_var(torch.ones(images.shape[0], 1)) 
         
-        # Get noise, classify it using G, then classify the output of G using D.
-        G_noise = self.compute_noise(images.shape[0], model.z_dim) # x'
-        G_output = model.G(G_noise) # G(x')
-        DG_score = model.D(G_output) # D(G(x'))
+        # Get noise, classify it using G, then reconstruct the output of G using D (autoencoder).
+        noise = self.compute_noise(images.shape[0], model.z_dim) # z
+        G_output = model.G(noise) # G(z)
+        DG_reconst = model.D(G_output) # D(G(z))
         
-        # Compute non-saturating G loss
-        G_loss = F.binary_cross_entropy(DG_score, G_labels)
+        # Reconstruct the generation using D
+        G_loss = torch.mean(torch.abs(DG_reconst - G_output)) # ||G_loss||1 == G_loss
         
         return G_loss
     
@@ -237,9 +249,9 @@ class Trainer:
             ax[i,j].imshow(images[i+j].data.numpy(), cmap='gray') 
         
         if save:
-            if not os.path.exists('../viz/dra-gan/'):
-                os.makedirs('../viz/dra-gan/')
-            torchvision.utils.save_image(images.unsqueeze(1).data.cpu(), '../viz/dra-gan/reconst_%d.png' %(epoch), nrow = 5)
+            if not os.path.exists('../viz/be-gan/'):
+                os.makedirs('../viz/be-gan/')
+            torchvision.utils.save_image(images.unsqueeze(1).data.cpu(), '../viz/be-gan/reconst_%d.png' %(epoch), nrow = 5)
         return fig
     
     def process_batch(self, iterator):
@@ -255,14 +267,18 @@ class Trainer:
     def load_model(self, loadpath,  model = None):
         """ Load state dictionary into model. If model not specified, instantiate it """
         if not model:
-            model = DRAGAN()
+            model = BEGAN()
         state = torch.load(loadpath)
         model.load_state_dict(state)
         return model
 
-model = DRAGAN(image_size = 784, hidden_dim = 256, z_dim = 128)
+
+# In[ ]:
+
+
+model = BEGAN(image_size = 784, hidden_dim = 256, z_dim = 128)
 if torch.cuda.is_available():
     model = model.cuda()
 trainer = Trainer(train_iter, val_iter, test_iter)
-model = trainer.train(model = model, num_epochs = 25, G_lr = 1e-4, D_lr = 1e-4, D_steps = 1)
+model = trainer.train(model = model, num_epochs = 100, G_lr = 1e-4, D_lr = 1e-4, D_steps = 1)
 

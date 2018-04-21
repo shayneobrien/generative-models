@@ -7,8 +7,8 @@ MM GAN: L(G) =  E[log(1-D(G(z)))]
 
 https://arxiv.org/abs/1406.2661
 
-From the abstract: 'We propose a new framework for estimating generative models via an adversarial
-process, in which we simultaneously train two models: a generative model G
+From the abstract: 'We propose a new framework for estimating generative models via an 
+adversarial process, in which we simultaneously train two models: a generative model G
 that captures the data distribution, and a discriminative model D that estimates
 the probability that a sample came from the training data rather than G. The training
 procedure for G is to maximize the probability of D making a mistake.'
@@ -94,6 +94,7 @@ class Trainer:
         # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
         epoch_steps = int(np.ceil(len(train_iter) / (D_steps))) 
         
+        # Begin training
         for epoch in tqdm_notebook(range(1, num_epochs + 1)):
             model.train()
             G_losses, D_losses = [], []
@@ -110,7 +111,7 @@ class Trainer:
                     # TRAINING D: Zero out gradients for D
                     D_optimizer.zero_grad()
 
-                    # Train the discriminator using samples from the generator, compute sigmoid cross entropy loss to get D_loss = loss(D(x)) + loss(D(G(x)))
+                    # Train the discriminator to learn to discriminate between real and generated images
                     D_loss = self.train_D(model, images)
                     
                     # Update parameters
@@ -126,7 +127,7 @@ class Trainer:
                 # TRAINING G: Zero out gradients for G
                 G_optimizer.zero_grad()
 
-                # Train the generator using predictions from D on the noise compared to true image labels
+                # Train the generator to generate images that fool the discriminator
                 G_loss = self.train_G(model, images)
                 
                 # Log results, update parameters
@@ -146,66 +147,52 @@ class Trainer:
     
     def train_D(self, model, images):
         """ Run 1 step of training for discriminator
+
         Input:
             model: model instantiation
             images: batch of images (reshaped to [batch_size, 784])
-            
         Output:
-            DX_loss: loss for true images vs D(x)
-            DG_loss: loss for generated images vs D(G(x))
-            DX_score: probability real images are generated
-            DG_score: probability generated images are generated
-            
-        Variables:
-            noise: randomly compute noise, x'
-            G_output: G(x'), generated images from G
-            DX_score: D(x), probability x is generated where x are true images
-            DG_score: D(G(x')), probability G(x') is generated where x' is noise
+            D_loss: non-saturing loss for discriminator, -E[log(D(x))] - E[log(1 - D(G(z)))]
         """    
-        # Generate labels for the real batch images (all 1, since they are real)
+        # Generate labels (ones indicate real images, zeros indicate generated)
         X_labels = to_var(torch.ones(images.shape[0], 1)) 
+        G_labels = to_var(torch.zeros(images.shape[0], 1)) 
         
         # Classify the real batch images, get the loss for these 
         DX_score = model.D(images)
         DX_loss = F.binary_cross_entropy(DX_score, X_labels)
         
-        # Sample outputs from the generator
+        # Sample noise z, generate output G(z)
         noise = self.compute_noise(images.shape[0], model.z_dim)
-        G_labels = to_var(torch.zeros(images.shape[0]))
         G_output = model.G(noise)
         
-        # Classify the fake batch images, get the loss for these (labels being all 0, since they are fake)
+        # Classify the fake batch images, get the loss for these using sigmoid cross entropy
         DG_score = model.D(G_output)
-        DG_loss = F.binary_cross_entropy(DG_score.squeeze(), G_labels)
+        DG_loss = F.binary_cross_entropy(DG_score, G_labels)
         
-        # Compute vanilla non-saturating D loss
+        # Compute vanilla (original paper) D loss
         D_loss = DX_loss + DG_loss
         
         return D_loss
     
     def train_G(self, model, images):
         """ Run 1 step of training for generator
+        
         Input:
             model: instantiated GAN
-            images: batch of images reshaped to [batch_size, -1]
-            
+            images: batch of images reshaped to [batch_size, -1]    
         Output:
-            G_loss: loss for how well G(x') fools D
-        
-        Variables:
-            noise: randomly generated noise, x'
-            G_output: G(x')
-            DG_score: D(G(x'))
+            G_loss: non-saturating loss for how well G(z) fools D, -E[log(D(G(z)))]
         """        
         # Generate labels for the generator batch images (all 0, since they are fake)
         G_labels = to_var(torch.ones(images.shape[0], 1)) 
         
-        # Get noise, classify it using G, then classify the output of G using D.
-        noise = self.compute_noise(images.shape[0], model.z_dim)
-        G_output = model.G(noise)
-        DG_score = model.D(G_output)
+        # Get noise (denoted z), classify it using G, then classify the output of G using D.
+        noise = self.compute_noise(images.shape[0], model.z_dim) # z
+        G_output = model.G(noise) # G(z)
+        DG_score = model.D(G_output) # D(G(z))
         
-        # Compute the loss for how D did versus the generations of G using sigmoid cross entropy
+        # Compute the non-saturating loss for how D did versus the generations of G using sigmoid cross entropy
         G_loss = F.binary_cross_entropy(DG_score, G_labels)
         
         return G_loss
@@ -251,10 +238,8 @@ class Trainer:
         model.load_state_dict(state)
         return model
 
-
 model = NSGAN(image_size = 784, hidden_dim = 256, z_dim = 128)
 if torch.cuda.is_available():
     model = model.cuda()
 trainer = Trainer(train_iter, val_iter, test_iter)
-model = trainer.train(model = model, num_epochs = 100, G_lr = 2e-4, D_lr = 2e-4, D_steps = 1)
-
+model = trainer.train(model = model, num_epochs = 25, G_lr = 2e-4, D_lr = 2e-4, D_steps = 1)

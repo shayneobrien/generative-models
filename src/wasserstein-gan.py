@@ -1,12 +1,20 @@
 """ (WGAN)
-Wasserstein GAN as laid out in original paper
+Wasserstein GAN as laid out in original paper.
+
 https://arxiv.org/abs/1701.07875
 
-WGAN utilizes the Wasserstein distance to produce a value function which 
-has better theoretical properties than the vanilla GAN. WGAN requires 
-that the discriminator (aka Critic because it is not actually classifying) 
-lies in the space of 1-Lipschitz functions, enforced via weight clipping. 
-The discriminator approximates the Wasserstein distance.
+WGAN utilizes the Wasserstein distance to produce a value function whichhas better theoretical properties 
+than the vanilla GAN. In particular, the authors prove that there exist distributions for which Jenson-Shannon,
+Kullback-Leibler, Reverse Kullback Leibler, and Total Variaton distance metrics where Wasserstein does. Furthermore,
+the Wasserstein distance has guarantees of continuity and and differentiability in neural network settings where
+the previously mentioned distributions may not. Lastly, they show that that every distribution that converges under 
+KL, reverse-KL, TV, and JS divergences also converges under the Wasserstein divergence and that a small Wasserstein
+distance corresponds to a small difference in distributions. The downside is that Wasserstein distance cannot be
+tractably computed directly. But if we make sure the discriminator (aka Critic because it is not actually classifying) 
+lies in the space of 1-Lipschitz functions, we can use that to approximate it instead. We crudely enforce this 
+via a weight clamping parameter C.
+
+Note that this implementation uses RMSprop optimizer instead of Adam as per the paper.
 
 """
 import torch, torchvision
@@ -44,19 +52,19 @@ class Generator(nn.Module):
         
 class Discriminator(nn.Module):
     def __init__(self, image_size, hidden_dim, output_dim):
-        """ Discriminator / Critic (as it's not trained to classify). Input is an image (real or generated), output is P(generated). """
+        """ Critic (not trained to classify). Input is an image (real or generated), output is the approximate Wasserstein Distance between z~P(G(z)) and real. """
         super(Discriminator, self).__init__()
         self.linear = nn.Linear(image_size, hidden_dim)
         self.discriminate = nn.Linear(hidden_dim, output_dim)     
         
     def forward(self, x):
         activated = F.relu(self.linear(x))
-        discrimination = F.sigmoid(self.discriminate(activated))
+        discrimination = F.relu(self.discriminate(activated))
         return discrimination
     
 class WGAN(nn.Module):
     def __init__(self, image_size, hidden_dim, z_dim, output_dim = 1):
-        """ Super class to contain both Discriminator (D) and Generator (G) """
+        """ Super class to contain both Discriminator / Critic (D) and Generator (G) """
         super(WGAN, self).__init__()
         self.G = Generator(image_size, hidden_dim, z_dim)
         self.D = Discriminator(image_size, hidden_dim, output_dim)
@@ -80,16 +88,18 @@ class Trainer:
             G_lr: float, learning rate for generator's Adam optimizer (default 5e-5)
             D_lr: float, learning rate for discriminator's Adam optimizer (default 5e-5)
             D_steps: int, training step ratio for how often to train D compared to G (default 5)
-            clip: float, bound for parameters [-c, c] to crudely ensure K-Lipschitz (default 0.01, or range [-0.01, 0.01])
+            clip: float, bound for parameters [-c, c] to crudely ensure K-Lipschitz (default 0.01, (range [-0.01, 0.01]))
         Outputs:
             model: trained WGAN instance 
         """
+        # Note that in the original paper, the authors use RMSprop for more stable training (no explanation given)
         G_optimizer = torch.optim.RMSprop(params=[p for p in model.G.parameters() if p.requires_grad], lr=G_lr)
         D_optimizer = torch.optim.RMSprop(params=[p for p in model.D.parameters() if p.requires_grad], lr=D_lr)
         
         # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
         epoch_steps = int(np.ceil(len(train_iter) / (D_steps))) 
         
+        # Begin training
         for epoch in tqdm_notebook(range(1, num_epochs + 1)):
             model.train()
             G_losses, D_losses = [], []
@@ -107,7 +117,7 @@ class Trainer:
                     # Zero out gradients for D
                     D_optimizer.zero_grad()
                     
-                    # Train the discriminator using samples from the generator, compute sigmoid cross entropy loss to get D_loss = loss(D(x)) + loss(D(G(x)))
+                    # Train the discriminator to learn to approximate the Wasserstein distance between real and generated distributions
                     D_loss = self.train_D(model, images)
                     
                     # Update parameters
@@ -117,7 +127,7 @@ class Trainer:
                     # Log results, backpropagate the discriminator network
                     D_step_loss.append(D_loss)
                     
-                    # Clamp weights as per original paper (this is a crude way of ensuring K-Lipschitz...)
+                    # Clamp weights as per original paper (this is a crude way of ensuring K-Lipschitz)
                     self.clip_D_weights(model, clip)
             
                 # We report D_loss in this way so that G_loss and D_loss have the same number of entries
@@ -126,8 +136,7 @@ class Trainer:
                 # TRAINING G: Zero out gradients for G
                 G_optimizer.zero_grad()
 
-                # Train the generator using predictions from D on the noise compared to true image labels
-                # (learn to generate examples from noise that fool the discriminator)
+                # Train the generator to (roughly) minimize the approximated Wasserstein distance
                 G_loss = self.train_G(model, images)
 
                 # Update parameters
@@ -149,39 +158,42 @@ class Trainer:
     
     def train_D(self, model, images):
         """ Run 1 step of training for discriminator
-            
-            G_noise = randomly generated noise, x'
-            G_output = G(x'), generated images from noise
-            DX_score = D(x), probability x is fake where x are true images
-            DG_score = D(G(x')), probability G(x') is fake where x' is noise
-        """      
+
+        Input:
+            model: model instantiation
+            images: batch of images (reshaped to [batch_size, 784])
+        Output:
+            D_loss: wasserstein loss for discriminator, -E[D(x)] + E[D(G(z))]
+        """   
         
         # Sample from the generator
-        G_noise = self.compute_noise(images.shape[0], model.z_dim)
-        G_output = model.G(G_noise)
+        noise = self.compute_noise(images.shape[0], model.z_dim)
+        G_output = model.G(noise)
         
         # Score real, generated images
         DX_score = model.D(images) # D(x), "real"
         DG_score = model.D(G_output) # D(G(x')), "fake"
         
-        # Compute loss E[D(x)] - E[D(G(x'))]
-        D_loss = -(torch.mean(DX_score) - torch.mean(DG_score))
+        # Compute WGAN loss for D
+        D_loss = -(torch.mean(DX_score)) + torch.mean(DG_score)
         
         return D_loss
     
     def train_G(self, model, images):
         """ Run 1 step of training for generator
         
-            G_noise = randomly generated noise, x'
-            G_output = G(x')
-            DG_score = D(G(x'))
-        """
+        Input:
+            model: instantiated GAN
+            images: batch of images reshaped to [batch_size, -1]    
+        Output:
+            G_loss: wasserstein loss for generator, -E[D(G(z))]
+        """   
         # Get noise, classify it using G, then classify the output of G using D.
-        noise = self.compute_noise(images.shape[0], model.z_dim) # x'
-        G_output = model.G(noise) # G(x')
-        DG_score = model.D(G_output) # D(G(x'))
+        noise = self.compute_noise(images.shape[0], model.z_dim) # z
+        G_output = model.G(noise) # G(z)
+        DG_score = model.D(G_output) # D(G(z))
         
-        # Compute WGAN G loss
+        # Compute WGAN loss for G
         G_loss = -(torch.mean(DG_score))
         
         return G_loss
@@ -231,9 +243,9 @@ class Trainer:
         model.load_state_dict(state)
         return model
 
-model = WGAN(image_size = 784, hidden_dim = 128, z_dim = 20)
+model = WGAN(image_size = 784, hidden_dim = 256, z_dim = 128)
 if torch.cuda.is_available():
     model = model.cuda()
 trainer = Trainer(train_iter, val_iter, test_iter)
-model = trainer.train(model = model, num_epochs = 50, G_lr = 5e-5, D_lr = 5e-5, D_steps = 5, clip = 0.01)
+model = trainer.train(model = model, num_epochs = 25, G_lr = 5e-5, D_lr = 5e-5, D_steps = 5, clip = 0.01)
 
