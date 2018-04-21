@@ -27,7 +27,10 @@ real images and discriminate real from generated images. The γ term lets us bal
 of γ lead to lower image diversity because the discriminator focuses more heavily on auto-encoding real images."
 We define γ = E[loss(D(G(z)))] / E[loss(D(x))]. Then E[loss(D(G(z)))] == γE[loss(D(x))]. To keep this balance,
 the authors introduce a variable kt ∈ [0,1] to control how much emphasis to put on loss(D(G(z))) during gradient
-descent. 
+descent.
+
+RECOMMENDED: Use a more expressive autoencoder that uses convolutions, as a purely feedforward network does poorly
+in reconstructing images.
 
 """
 import torch, torchvision
@@ -95,7 +98,7 @@ class Trainer:
         self.test_iter = test_iter
     
     def train(self, model, num_epochs, G_lr = 1e-4, D_lr = 1e-4, D_steps = 1, GAMMA = 0.50, LAMBDA = 1e-3, K = 0.00):
-        """ Train a Least Squares GAN
+        """ Train a Boundary Equilibrium GAN
             Logs progress using G loss, D loss, visualizations of Generator output.
 
         Inputs:

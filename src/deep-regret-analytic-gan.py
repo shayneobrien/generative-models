@@ -72,7 +72,7 @@ class Trainer:
         self.test_iter = test_iter
     
     def train(self, model, num_epochs, G_lr = 1e-4, D_lr = 1e-4, D_steps = 1):
-        """ Train a Least Squares GAN
+        """ Train a Deep Regret Analytic GAN
             Logs progress using G loss, D loss, visualizations of Generator output.
 
         Inputs:
