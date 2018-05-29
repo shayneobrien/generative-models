@@ -5,8 +5,8 @@ https://arxiv.org/abs/1701.07875
 
 WGAN utilizes the Wasserstein distance to produce a value function whichhas better theoretical properties 
 than the vanilla GAN. In particular, the authors prove that there exist distributions for which Jenson-Shannon,
-Kullback-Leibler, Reverse Kullback Leibler, and Total Variaton distance metrics where Wasserstein does. Furthermore,
-the Wasserstein distance has guarantees of continuity and and differentiability in neural network settings where
+Kullback-Leibler, Reverse Kullback Leibler, and Total Variaton distance metrics do not converge where Wasserstein does. 
+Furthermore, the Wasserstein distance has guarantees of continuity and and differentiability in neural network settings where
 the previously mentioned distributions may not. Lastly, they show that that every distribution that converges under 
 KL, reverse-KL, TV, and JS divergences also converges under the Wasserstein divergence and that a small Wasserstein
 distance corresponds to a small difference in distributions. The downside is that Wasserstein distance cannot be

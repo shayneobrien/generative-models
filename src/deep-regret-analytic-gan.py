@@ -173,18 +173,20 @@ class Trainer:
         
         # GRADIENT PENALTY STEPS:
         # Uniformly sample along one straight line per each batch entry. 
-        delta = torch.rand(images.shape[0], 1).expand(images.size())
+        delta = to_var(torch.rand(images.shape[0], 1).expand(images.size()))
 
         # Generate images from the noise, ensure unit 
-        G_interpolation = to_var(delta * images.data + (1 - delta) * (images.data + C * images.data.std() * torch.rand(images.size())))
-        G_interpolation.requires_grad = True
-
+        G_interpolation = delta * images + (1 - delta) * (images + C * images.std() * to_var(torch.rand(images.size())))
         D_interpolation = model.D(G_interpolation)
+
+        weights = torch.ones(D_interpolation.size()
+        if torch.cuda.is_available():
+            weights = weights.cuda()
 
         # Compute the gradients of D with respect to the noise generated input
         gradients = torch.autograd.grad(outputs = D_interpolation, 
                             inputs = G_interpolation,
-                            grad_outputs = torch.ones(D_interpolation.size()), # TODO: cuda
+                            grad_outputs = weights, # TODO: cuda
                             only_inputs = True,
                             create_graph = True,
                             retain_graph = True,)[0]

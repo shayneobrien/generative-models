@@ -188,9 +188,9 @@ class Trainer:
         
         return G_loss
     
-    def compute_noise(self, batch_size, image_size):
+    def compute_noise(self, batch_size, z_dim):
         """ Compute random noise for the generator to learn to make images from """
-        return to_var(torch.randn(batch_size, image_size))
+        return to_var(torch.randn(batch_size, z_dim))
     
     def generate_images(self, model, epoch, num_outputs = 25, save = True):
         """ Visualize progress of generator learning """

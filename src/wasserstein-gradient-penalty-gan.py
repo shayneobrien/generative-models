@@ -167,19 +167,21 @@ class Trainer:
         
         # GRADIENT PENALTY:
         # Uniformly sample along one straight line per each batch entry. 
-        epsilon = torch.rand(images.shape[0], 1).expand(images.size())
+        epsilon = to_var(torch.rand(images.shape[0], 1).expand(images.size()))
 
         # Generate images from the noise, ensure unit gradient norm 1 (compared to TensorFlow original implementation this is foiled out)
         # See Section 4 and Algorithm 1 of original paper for full explanation.
-        G_interpolation = to_var(epsilon*images.data + ((1-epsilon)*G_output.data)) # negation doesn't matter; we square later on
-        G_interpolation.requires_grad = True
-
+        G_interpolation = epsilon*images + (1-epsilon)*G_output # negation doesn't matter; we square later on
         D_interpolation = model.D(G_interpolation)
+
+        weights = torch.ones(D_interpolation.size()
+        if torch.cuda.is_available():
+            weights = weights.cuda()
 
         # Compute the gradients of D with respect to the noise generated input
         gradients = torch.autograd.grad(outputs = D_interpolation, 
                             inputs = G_interpolation,
-                            grad_outputs = torch.ones(D_interpolation.size()), # TODO: cuda
+                            grad_outputs = weights, # TODO: cuda
                             only_inputs = True,
                             create_graph = True,
                             retain_graph = True,)[0]
