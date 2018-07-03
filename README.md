@@ -8,6 +8,7 @@ The main file changes can be see in the train, train_D, and train_G of the Train
 # TODO
 
 Fixes: discriminator activation function, change description, double check correctness on DRAGAN, fix BEGAN autoencoder issue, rename trainer classes, switch tqdm_notebook to tqdm, push src. Make the only difference between the trainers train_D and train_G (?)
+
 Adding: CVAE, other VAE types? Relativistic GAN, Self-attention GAN, Primal-Dual Wasserstein GAN, InfoGAN (?), Fisher GAN (?), Fairness GAN (?), Bayesian GAN (?)
 
 # CAUTIONARY NOTE
