@@ -32,27 +32,30 @@ from torchvision.utils import make_grid
 
 import os
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
-from tqdm import tqdm_notebook
+from copy import deepcopy
+
+from tqdm import tqdm
 from itertools import product
 from load_data import get_data
 
-def to_var(x):
-    """ Utility function to automatically cudarize """
+def to_cuda(x):
+    """ Cuda-erize a tensor """
     if torch.cuda.is_available():
         x = x.cuda()
-    return Variable(x)
+    return x
 
 # Load in binzarized MNIST data, separate into data loaders
 train_iter, val_iter, test_iter = get_data()
 
 
 class Encoder(nn.Module):
+    """ MLP encoder for VAE. Input is an image, 
+    outputs is the mean and std of the latent representation z pre-reparametrization 
+    """
     def __init__(self, image_size, hidden_dim, z_dim):
-        """ MLP encoder for VAE. Input is an image, outputs are the mean
-        and std of the latent representation z, pre-reparametrization """
         super(Encoder, self).__init__()
+        
         self.linear = nn.Linear(image_size, hidden_dim)
         self.mu = nn.Linear(hidden_dim, z_dim) 
         self.log_var = nn.Linear(hidden_dim, z_dim)
@@ -64,10 +67,11 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    """ MLP decoder for VAE. Input is a reparametrized latent representation,
+    """ MLP decoder for VAE. Input is a reparametrized latent representation, 
     output is reconstructed image """
     def __init__(self, z_dim, hidden_dim, image_size):
         super(Decoder, self).__init__()
+        
         self.linear = nn.Linear(z_dim, hidden_dim)
         self.recon = nn.Linear(hidden_dim, image_size)
         
@@ -78,10 +82,11 @@ class Decoder(nn.Module):
 
 
 class VAE(nn.Module):
-    """ VAE super class to reconstruct an image.
-    Contains reparametrization method """
+    """ VAE super class to reconstruct an image. Contains reparametrization method 
+    """
     def __init__(self, image_size=784, hidden_dim=400, z_dim=20):
         super(VAE, self).__init__()
+        
         self.encoder = Encoder(image_size = image_size, hidden_dim = hidden_dim, z_dim = z_dim)
         self.decoder = Decoder(z_dim = z_dim, hidden_dim = hidden_dim, image_size = image_size)
                      
@@ -92,46 +97,45 @@ class VAE(nn.Module):
         return out_img, mu, log_var
     
     def reparameterize(self, mu, log_var):
-        """" Reparametrization trick: z = mean + sigma*epsilon, where epsilon ~ N(0, 1)."""
-        epsilon = to_var(torch.randn(mu.size(0), mu.size(1)))
+        """" Reparametrization trick: z = mean + std*epsilon, where epsilon ~ N(0, 1)."""
+        epsilon = to_cuda(torch.randn(mu.size(0), mu.size(1)))
         z = mu + epsilon * torch.exp(log_var/2)    # 2 for convert var to std
         return z
 
 
-class Trainer:
-    def __init__(self, train_iter, val_iter, test_iter):
+class VAETrainer:
+    def __init__(self, model, train_iter, val_iter, test_iter, viz=False):
         """ Object to hold data iterators, train the model """
+        self.model = to_cuda(model)
+        self.name = model.__class__.__name__
+        
         self.train_iter = train_iter
         self.val_iter = val_iter
         self.test_iter = test_iter
         
         self.debugging_image, _ = next(iter(val_iter))
+        self.viz = viz
     
-    def train(self, model, num_epochs, lr=1e-3, weight_decay=1e-5):
+    def train(self, num_epochs, lr=1e-3, weight_decay=1e-5):
         """ Train a Variational Autoencoder
             Logs progress using total loss, reconstruction loss, kl_divergence, and validation loss
 
         Inputs:
-            model: class, initialized VAE module
             num_epochs: int, number of epochs to train for
             lr: float, learning rate for Adam optimizer (default 1e-3)
             weight_decay: float, weight decay for Adam optimizer (default 1e-5)
-        Outputs:
-            model: trained VAE instance """   
+        """   
         
         # Initialize best validation loss for early stopping
         best_val_loss = 1e10
         
         # Adam optimizer, sigmoid cross entropy for reconstructing binary MNIST
-        optimizer = torch.optim.Adam(params=[p for p in model.parameters() if p.requires_grad], 
-                                     lr=lr,
-                                     weight_decay=weight_decay)
-        criterion = nn.BCELoss(size_average=False)
+        optimizer = torch.optim.Adam(params=[p for p in self.model.parameters() if p.requires_grad], lr=lr, weight_decay=weight_decay)
         
         # Begin training
-        for epoch in tqdm_notebook(range(1, num_epochs + 1)):
+        for epoch in tqdm(range(1, num_epochs+1)):
             
-            model.train()
+            self.model.train()
             epoch_loss, epoch_recon, epoch_kl = [], [], []
             
             for batch in self.train_iter:
@@ -140,7 +144,7 @@ class Trainer:
                 optimizer.zero_grad()
                 
                 # Compute reconstruction loss, Kullback-Leibler divergence for a batch
-                recon_loss, kl_diverge = self.compute_batch(batch, criterion, model)
+                recon_loss, kl_diverge = self.compute_batch(batch)
                 batch_loss = recon_loss + kl_diverge # ELBO
                 
                 # Update parameters
@@ -148,15 +152,16 @@ class Trainer:
                 optimizer.step()
                 
                 # Log metrics
-                epoch_loss.append(batch_loss.data[0]), epoch_recon.append(recon_loss.data[0]), epoch_kl.append(kl_diverge.data[0])
+                epoch_loss.append(batch_loss.item())
+                epoch_recon.append(recon_loss.item())
+                epoch_kl.append(kl_diverge.item())
             
             # Test the model on the validation set
-            model.eval()
-            val_loss = self.evaluate(self.val_iter, criterion, model)
+            val_loss = self.evaluate(self.val_iter)
             
             # Early stopping
             if val_loss < best_val_loss:
-                best_model = model
+                self.best_model = deepcopy(self.model)
                 best_val_loss = val_loss
                 
             # Progress logging
@@ -164,38 +169,37 @@ class Trainer:
                    %(epoch, num_epochs, np.mean(epoch_loss), np.mean(epoch_recon), np.mean(epoch_kl), val_loss))
             
             # Debugging and visualization purposes
-            fig = self.reconstruct_images(self.debugging_image, epoch, model)
-            plt.show()
-            
-        return best_model  
-    
-    def compute_batch(self, batch, criterion, model):
+            if self.viz:
+                self.reconstruct_images(self.debugging_image, epoch)
+                plt.show()
+                
+    def compute_batch(self, batch):
         """ Compute loss for a batch of examples """
         images, _ = batch
-        images = to_var(images.view(images.shape[0], -1))
+        images = to_cuda(images.view(images.shape[0], -1))
         
-        output, mu, log_var = model(images)
+        output, mu, log_var = self.model(images)
         
-        recon_loss = criterion(output, images)
+        recon_loss = F.binary_cross_entropy(output, images, size_average=False)
         kl_diverge = self.kl_divergence(mu, log_var)
         
         return recon_loss, kl_diverge
     
-    def evaluate(self, iterator, criterion, model):
+    def evaluate(self, iterator):
         """ Evaluate on a given dataset """
         loss = []
         for batch in iterator:
-            recon_loss, kl_diverge = self.compute_batch(batch, criterion, model)
+            recon_loss, kl_diverge = self.compute_batch(batch)
             batch_loss = recon_loss + kl_diverge
-            loss.append(batch_loss.data[0])
+            loss.append(batch_loss.item())
             
         loss = np.mean(loss)
         return loss
     
-    def reconstruct_images(self, images, epoch, model, save=True):
+    def reconstruct_images(self, images, epoch, save=True):
         """Reconstruct a fixed input at each epoch for progress visualization """
-        images = to_var(images.view(images.shape[0], -1))
-        reconst_images, _, _ = model(images)
+        images = to_cuda(images.view(images.shape[0], -1))
+        reconst_images, _, _ = self.model(images)
         reconst_images = reconst_images.view(reconst_images.shape[0], 28, 28)
         
         size_figure_grid = int(reconst_images.shape[0]**0.5)
@@ -212,90 +216,114 @@ class Trainer:
             torchvision.utils.save_image(images.data.cpu(), '../viz/vae-viz/real.png', nrow=size_figure_grid)
             torchvision.utils.save_image(reconst_images.unsqueeze(1).data.cpu(), '../viz/vae-viz/reconst_%d.png' %(epoch), nrow=size_figure_grid)
             
-        return fig
-
     def kl_divergence(self, mu, log_var):
         """ Compute Kullback-Leibler divergence """
         return torch.sum(0.5 * (mu**2 + torch.exp(log_var) - log_var - 1))
     
-    def save_model(self, model, savepath):
+    def save_model(self, savepath):
         """ Save model state dictionary """
-        torch.save(model.state_dict(), savepath + 'saved_vae.pth')
+        torch.save(self.model.state_dict(), savepath)
     
-    def load_model(self, loadpath,  model = None):
+    def load_model(self, loadpath):
         """ Load state dictionary into model. If model not specified, instantiate it """
-        if not model:
-            model = VAE()
         state = torch.load(loadpath)
-        model.load_state_dict(state)
-        return model
+        self.model.load_state_dict(state)
 
+
+# OPTIONAL: Visualization / latent-space sampling methods
 class Viz:
-    def __init__(self, model = None):
+    """ Visualize and sample latent space """
+    def __init__(self, model=None):
         self.model = model
         
-    def sample_images(self, model, num_images=64):
+    def sample_images(self, num_images=64):
         """ Viz method 1: generate images by sampling z ~ p(z), x ~ p(x|z,θ) """
-        sample = to_var(torch.randn(num_images, model.decoder.linear.in_features))
-        sample = model.decoder(sample)
+        # Sample from latent space randomly, visualize output
+        sample = to_cuda(torch.randn(num_images, self.model.decoder.linear.in_features))
+        sample = self.model.decoder(sample)
         to_img = ToPILImage()
         img = to_img(make_grid(sample.data.view(num_images, 1, 28, 28)))
         display(img)
         
-    def sample_interpolated_images(self, model):
+    def sample_interpolated_images(self):
         """ Viz method 2: sample two random latent vectors from p(z), 
-            then sample from their interpolated values"""
-        z1 = torch.normal(torch.zeros(model.decoder.linear.in_features), 1)
-        z2 = torch.normal(torch.zeros(model.decoder.linear.in_features), 1)
+        then sample from their interpolated values
+        """
+        # Sample latent vectors
+        z1 = torch.normal(torch.zeros(self.model.decoder.linear.in_features), 1)
+        z2 = torch.normal(torch.zeros(self.model.decoder.linear.in_features), 1)
         to_img = ToPILImage()
-        for alpha in np.linspace(0, 1, model.decoder.linear.in_features):
-            z = to_var(alpha*z1 + (1-alpha)*z2)
-            sample = model.decoder(z)
+        
+        # Interpolate within latent vectors
+        for alpha in np.linspace(0, 1, self.model.decoder.linear.in_features):
+            z = to_cuda(alpha*z1 + (1-alpha)*z2)
+            sample = self.model.decoder(z)
             display(to_img(make_grid(sample.data.view(28, 28).unsqueeze(0))))
             
-    def means_scatterplot(self, num_epochs=10):
+    def means_scatterplot(self, num_epochs=3):
         """ Viz method 3: train a VAE with 2 latent variables, compare variational means """
-        model = VAE(image_size = 784, hidden_dim = 400, z_dim = 2)
-        if torch.cuda.is_available():
-            vae.cuda()
-        trainer = Trainer(train_iter, val_iter, test_iter)
-        model = trainer.train(model, num_epochs)
+        
+        # Initialize and train a VAE with size two dimension latent space
+        model = VAE(image_size=784, hidden_dim=400, z_dim=2)
+        trainer = VAETrainer(model, train_iter, val_iter, test_iter)
+        trainer.train(num_epochs)
+        model = trainer.best_model
 
+        # Across batches in train iter, collect variationa means
         data = []
         for batch in train_iter:
             images, labels = batch
-            images = to_var(images.view(images.shape[0], -1))
+            images = to_cuda(images.view(images.shape[0], -1))
             mu, log_var = model.encoder(images)
 
             for label, (m1, m2) in zip(labels, mu):
-                data.append((label, m1.data[0], m2.data[0]))
+                data.append((label.item(), m1.item(), m2.item()))
 
-        df = pd.DataFrame(data, columns=('label', 'm1', 'm2'))
+        # Plot
+        labels, m1s, m2s = zip(*data)
         plt.figure(figsize=(10,10))
-        plt.scatter(df['m1'], df['m2'], c=df['label'])
+        plt.scatter(m1s, m2s, c=labels)
+        plt.legend([str(i) for i in set(labels)])
         return model
 
-    def explore_latent_space(self, model):
+    def explore_latent_space(self):
         """ Viz method 4: explore the latent space representations """
-        mu = torch.stack([torch.FloatTensor([m1, m2]) for m1 in np.linspace(-2, 2, 10) for m2 in np.linspace(-2, 2, 10)])
-        samples = model.decoder(to_var(mu))
+        
+        # Evenly sample acorss latent space, visualize the outputs
+        mu = torch.stack([torch.FloatTensor([m1, m2]) 
+                          for m1 in np.linspace(-2, 2, 10) 
+                          for m2 in np.linspace(-2, 2, 10)])
+        samples = self.model.decoder(to_cuda(mu))
         to_img = ToPILImage()
         display(to_img(make_grid(samples.data.view(-1, 1, 28, 28), nrow=10)))
         
     def make_all(self):
         """ Execute all viz methods outlined in this class """
-        self.sample_images(self.model)
-        self.sample_interpolated_images(self.model)
-        self.model = self.means_scatterplot(num_epochs = 3)
-        self.explore_latent_space(self.model)
-    
-# Train VAE on binary MNIST
-model = VAE(image_size=784, hidden_dim=400, z_dim=20)
-if torch.cuda.is_available():
-    model.cuda()
-trainer = Trainer(train_iter, val_iter, test_iter)
-model = trainer.train(model, 40)
+        
+        print('Sampled images from latent space:')
+        self.sample_images()
+        
+        print('Interpolating between two randomly sampled')
+        self.sample_interpolated_images()
+        
+        print('Visualizing latent space groupings')
+        self.model = self.means_scatterplot()
+        
+        print('Exploring latent representations')
+        self.explore_latent_space()
 
-# Explore latent space
-viz = Viz(model)
-viz.make_all()
+
+# # Train VAE on binary MNIST
+model = VAE(image_size=784, 
+            hidden_dim=400, 
+            z_dim=20)
+
+trainer = VAETrainer(model=model,
+                     train_iter=train_iter, 
+                     val_iter=val_iter, 
+                     test_iter=test_iter,
+                     viz=False)
+
+trainer.train(num_epochs=5,
+              lr=1e-3,
+              weight_decay=1e-5)
