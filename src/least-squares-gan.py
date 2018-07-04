@@ -27,15 +27,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm
 from load_data import get_data
-
-def to_cuda(x):
-    """ Cuda-erize a tensor """
-    if torch.cuda.is_available():
-        x = x.cuda()
-    return x
-
-# Load in binarized MNIST data, separate into data loaders
-train_iter, val_iter, test_iter = get_data()
+from .utils import *
 
 
 class Generator(nn.Module):
@@ -69,7 +61,7 @@ class Discriminator(nn.Module):
         return discrimination
 
 
-class LSGAN(nn.Module):
+class GAN(nn.Module):
     """ Super class to contain both Discriminator (D) and Generator (G) 
     """
     def __init__(self, image_size, hidden_dim, z_dim, output_dim=1):
@@ -81,7 +73,7 @@ class LSGAN(nn.Module):
         self.z_dim = z_dim
 
 
-class LSGANTrainer:
+class Trainer:
     """ Object to hold data iterators, train a GAN variant 
     """
     def __init__(self, model, train_iter, val_iter, test_iter, viz=False):
@@ -276,18 +268,22 @@ class LSGANTrainer:
         state = torch.load(loadpath)
         self.model.load_state_dict(state)
 
+if __name__ == "__main__":
 
-model = LSGAN(image_size=784, 
-              hidden_dim=256, 
-              z_dim=128)
+    # Load in binarized MNIST data, separate into data loaders
+    train_iter, val_iter, test_iter = get_data()
 
-trainer = LSGANTrainer(model=model, 
-                       train_iter=train_iter, 
-                       val_iter=val_iter, 
-                       test_iter=test_iter,
-                       viz=False)
+    model = GAN(image_size=784, 
+                  hidden_dim=256, 
+                  z_dim=128)
 
-trainer.train(num_epochs=25,
-              G_lr=1e-4,
-              D_lr=1e-4,
-              D_steps=1)
+    trainer = Trainer(model=model, 
+                           train_iter=train_iter, 
+                           val_iter=val_iter, 
+                           test_iter=test_iter,
+                           viz=False)
+
+    trainer.train(num_epochs=25,
+                  G_lr=1e-4,
+                  D_lr=1e-4,
+                  D_steps=1)

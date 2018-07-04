@@ -44,15 +44,7 @@ import numpy as np
 from tqdm import tqdm_notebook
 from itertools import product
 from load_data import get_data
-
-def to_var(x):
-    """ function to automatically cudarize.. """
-    if torch.cuda.is_available():
-        x = x.cuda()
-    return Variable(x)
-
-# Load in data, separate into data loaders
-train_iter, val_iter, test_iter = get_data()
+from .utils import *
 
 class Generator(nn.Module):
     def __init__(self, image_size, hidden_dim, z_dim):
@@ -81,7 +73,7 @@ class Discriminator(nn.Module):
         reconstructed = F.sigmoid(self.decoder(encoded))
         return reconstructed
     
-class BEGAN(nn.Module):
+class GAN(nn.Module):
     def __init__(self, image_size, hidden_dim, z_dim):
         """ Super class to contain both Discriminator / Critic (D) and Generator (G) """
         super(BEGAN, self).__init__()
@@ -276,12 +268,13 @@ class Trainer:
         return model
 
 
-# In[ ]:
+if __name__ == "__main__":
+    train_iter, val_iter, test_iter = get_data()
 
 
-model = BEGAN(image_size = 784, hidden_dim = 256, z_dim = 128)
-if torch.cuda.is_available():
-    model = model.cuda()
-trainer = Trainer(train_iter, val_iter, test_iter)
-model = trainer.train(model = model, num_epochs = 100, G_lr = 1e-4, D_lr = 1e-4, D_steps = 1)
+    model = GAN(image_size = 784, hidden_dim = 256, z_dim = 128)
+    if torch.cuda.is_available():
+        model = model.cuda()
+    trainer = Trainer(train_iter, val_iter, test_iter)
+    model = trainer.train(model = model, num_epochs = 100, G_lr = 1e-4, D_lr = 1e-4, D_steps = 1)
 

@@ -25,16 +25,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm
 from load_data import get_data
-
-def to_cuda(x):
-    """ Cuda-erize a tensor """
-    if torch.cuda.is_available():
-        x = x.cuda()
-    return x
-
-# Load in binarized MNIST data, separate into data loaders
-train_iter, val_iter, test_iter = get_data()
-
+from .utils import *
 
 class Generator(nn.Module):
     """ Generator. Input is noise, output is a generated image. 
@@ -296,18 +287,22 @@ class WGANGPTrainer:
         state = torch.load(loadpath)
         self.model.load_state_dict(state)
 
+if __name__ == "__main__":
 
-model = WGANGP(image_size=784, 
-              hidden_dim=256, 
-              z_dim=128)
+    # Load in binarized MNIST data, separate into data loaders
+    train_iter, val_iter, test_iter = get_data()
 
-trainer = WGANGPTrainer(model=model, 
-                        train_iter=train_iter, 
-                        val_iter=val_iter, 
-                        test_iter=test_iter,
-                        viz=False)
+    model = GAN(image_size=784, 
+                  hidden_dim=256, 
+                  z_dim=128)
 
-trainer.train(num_epochs=25,
-              G_lr=1e-4,
-              D_lr=1e-4,
-              D_steps=5)
+    trainer = Trainer(model=model, 
+                            train_iter=train_iter, 
+                            val_iter=val_iter, 
+                            test_iter=test_iter,
+                            viz=False)
+
+    trainer.train(num_epochs=25,
+                  G_lr=1e-4,
+                  D_lr=1e-4,
+                  D_steps=5)
