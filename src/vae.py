@@ -38,15 +38,7 @@ from copy import deepcopy
 from tqdm import tqdm
 from itertools import product
 from load_data import get_data
-
-def to_cuda(x):
-    """ Cuda-erize a tensor """
-    if torch.cuda.is_available():
-        x = x.cuda()
-    return x
-
-# Load in binzarized MNIST data, separate into data loaders
-train_iter, val_iter, test_iter = get_data()
+from .utils import *
 
 
 class Encoder(nn.Module):
@@ -103,7 +95,7 @@ class VAE(nn.Module):
         return z
 
 
-class VAETrainer:
+class Trainer:
     def __init__(self, model, train_iter, val_iter, test_iter, viz=False):
         """ Object to hold data iterators, train the model """
         self.model = to_cuda(model)
@@ -320,21 +312,23 @@ class Viz:
         print('Exploring latent representations')
         self.explore_latent_space()
 
+if __name__ == "__main__":
 
-model = VAE(image_size=784, 
+    # Load in binzarized MNIST data, separate into data loaders
+    train_iter, val_iter, test_iter = get_data()
+
+
+    model = VAE(image_size=784, 
             hidden_dim=400, 
             z_dim=20)
 
-trainer = VAETrainer(model=model,
-                     train_iter=train_iter, 
-                     val_iter=val_iter, 
-                     test_iter=test_iter,
-                     viz=False)
+    trainer = Trainer(model=model,
+                         train_iter=train_iter, 
+                         val_iter=val_iter, 
+                         test_iter=test_iter,
+                         viz=False)
 
-trainer.train(num_epochs=5,
+
+    trainer.train(num_epochs=5,
               lr=1e-3,
               weight_decay=1e-5)
-
-# Explore latent space
-# viz = Viz(trainer.best_model)
-# viz.make_all()

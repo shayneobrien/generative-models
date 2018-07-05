@@ -1,19 +1,20 @@
-""" (NS GAN)
-Vanilla GAN using MLP architecture, non-saturating loss as laid out in the original paper.
-Compared to MM GAN, the only change is the generator's loss. In particular:
+""" (DRAGAN)
+Deep Regret Analytic GAN
 
-NS GAN: L(G) = -E[log(D(G(z)))]
-MM GAN: L(G) =  E[log(1-D(G(z)))]
+https://arxiv.org/pdf/1705.07215.pdf
 
-In both NS GAN and MM GAN, the output of G can be interpretted as a probability.
+The output of DRAGAN's D can be interpretted as a probability, similarly to MMGAN
+and NSGAN.
 
-https://arxiv.org/abs/1406.2661
+Proposes to study GANs from a regret minimization perspective. This implementation is 
+very similar to WGAN GP, in that it is applying a gradient penalty to try and get at 
+an improved training objective based on how D and G would optimally perform. They apply 
+the gradient penalty only close to the real data manifold (whereas WGAN GP picks the 
+gradient location on a random line between a real and randomly generated fake sample). 
+For further details, see Section 2.5 of the paper.
 
-From the abstract: 'We propose a new framework for estimating generative models via an 
-adversarial process, in which we simultaneously train two models: a generative model G
-that captures the data distribution, and a discriminative model D that estimates
-the probability that a sample came from the training data rather than G. The training
-procedure for G is to maximize the probability of D making a mistake.'
+DRAGAN is very similar to WGANGP, but seems much less stable. I would spend more time on
+WGANGP than DRAGAN.
 """
 
 import torch, torchvision
@@ -28,15 +29,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm
 from load_data import get_data
-
-def to_cuda(x):
-    """ Cuda-erize a tensor """
-    if torch.cuda.is_available():
-        x = x.cuda()
-    return x
-
-# Load in binarized MNIST data, separate into data loaders
-train_iter, val_iter, test_iter = get_data()
+from .utils import *
 
 
 class Generator(nn.Module):
@@ -44,6 +37,7 @@ class Generator(nn.Module):
     """
     def __init__(self, image_size, hidden_dim, z_dim):
         super().__init__()
+        
         self.linear = nn.Linear(z_dim, hidden_dim)
         self.generate = nn.Linear(hidden_dim, image_size)
         
@@ -54,10 +48,12 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    """ Discriminator. Input is an image (real or generated), output is P(generated).
+    """ Critic (not trained to classify). Input is an image (real or generated), 
+    output is the approximate Wasserstein Distance between z~P(G(z)) and real.
     """
     def __init__(self, image_size, hidden_dim, output_dim):
         super().__init__()
+        
         self.linear = nn.Linear(image_size, hidden_dim)
         self.discriminate = nn.Linear(hidden_dim, output_dim)     
         
@@ -67,18 +63,19 @@ class Discriminator(nn.Module):
         return discrimination
 
 
-class NSGAN(nn.Module):
+class GAN(nn.Module):
     """ Super class to contain both Discriminator (D) and Generator (G) 
     """
     def __init__(self, image_size, hidden_dim, z_dim, output_dim=1):
         super().__init__()
+        
         self.G = Generator(image_size, hidden_dim, z_dim)
         self.D = Discriminator(image_size, hidden_dim, output_dim)
         
         self.z_dim = z_dim
 
-    
-class NSGANTrainer:
+
+class Trainer:
     """ Object to hold data iterators, train a GAN variant 
     """
     def __init__(self, model, train_iter, val_iter, test_iter, viz=False):
@@ -93,16 +90,16 @@ class NSGANTrainer:
         self.Dlosses = []
         
         self.viz = viz
-            
-    def train(self, num_epochs, G_lr=2e-4, D_lr=2e-4, D_steps=1):
-        """ Train a vanilla GAN using the non-saturating gradients loss for the generator. 
+
+    def train(self, num_epochs, G_lr=1e-4, D_lr=1e-4, D_steps=5):
+        """ Train a Deep Regret Analytic GAN
             Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            G_lr: float, learning rate for generator's Adam optimizer (default 2e-4)
-            D_lr: float, learning rate for discriminator's Adam optimizer (default 2e-4)
-            D_steps: int, training step ratio for how often to train D compared to G (default 1)
+            G_lr: float, learning rate for generator's Adam optimizer (default 1e-4)
+            D_lr: float, learning rate for discriminator's Adam optimizer (default 1e-4)
+            D_steps: int, training step ratio for how often to train D compared to G (default 5)
         """
         # Initialize optimizers
         G_optimizer = torch.optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
@@ -128,7 +125,8 @@ class NSGANTrainer:
                     # TRAINING D: Zero out gradients for D
                     D_optimizer.zero_grad()
 
-                    # Train the discriminator to learn to discriminate between real and generated images
+                    # Train the discriminator to approximate the Wasserstein distance between real, generated
+                    # distributions                    
                     D_loss = self.train_D(images)
                     
                     # Update parameters
@@ -144,7 +142,7 @@ class NSGANTrainer:
                 # TRAINING G: Zero out gradients for G
                 G_optimizer.zero_grad()
 
-                # Train the generator to generate images that fool the discriminator
+                # Train the generator to (roughly) minimize the approximated Wasserstein distance
                 G_loss = self.train_G(images)
                 
                 # Log results, update parameters
@@ -165,35 +163,59 @@ class NSGANTrainer:
             self.generate_images(epoch)
             
             if self.viz:
-                plt.show()
-                
-    def train_D(self, images):
+                plt.show()       
+        
+    def train_D(self, images, LAMBDA=10, K=1, C=1):
         """ Run 1 step of training for discriminator
 
         Input:
+            model: model instantiation
             images: batch of images (reshaped to [batch_size, 784])
         Output:
-            D_loss: non-saturing loss for discriminator, 
-            -E[log(D(x))] - E[log(1 - D(G(z)))]
-        """    
-        # Generate labels (ones indicate real images, zeros indicate generated)
+            D_loss: DRAGAN loss for discriminator, -E[log(D(x))] - E[log(1 - D(G(z)))] + λE[(||∇ D(G(z))|| - 1)^2]
+        """     
+        
+        # NON-SATURATING LOSS STEPS:
+        # Generate labels for the real and generated images (real is 1, generated is 0)
         X_labels = to_cuda(torch.ones(images.shape[0], 1)) 
-        G_labels = to_cuda(torch.zeros(images.shape[0], 1)) 
+        G_labels = to_cuda(torch.zeros(images.shape[0], 1))
         
         # Classify the real batch images, get the loss for these 
         DX_score = self.model.D(images)
         DX_loss = F.binary_cross_entropy(DX_score, X_labels)
         
-        # Sample noise z, generate output G(z)
-        noise = self.compute_noise(images.shape[0], model.z_dim)
+        # Sample outputs from the generator
+        noise = self.compute_noise(images.shape[0], self.model.z_dim)
         G_output = self.model.G(noise)
         
-        # Classify the fake batch images, get the loss for these using sigmoid cross entropy
+        # Classify the fake batch images, get the loss for these (labels being all 0, since they are fake)
         DG_score = self.model.D(G_output)
         DG_loss = F.binary_cross_entropy(DG_score, G_labels)
         
-        # Compute vanilla (original paper) D loss
-        D_loss = DX_loss + DG_loss
+        # GRADIENT PENALTY STEPS:
+        # Uniformly sample along one straight line per each batch entry. 
+        delta = to_cuda(torch.rand(images.shape[0], 1).expand(images.size()))
+
+        # Generate images from the noise, ensure unit 
+        G_interpolation = to_var(delta*images.data + (1-delta) * 
+                                 (images.data + C*images.data.std() * torch.rand(images.size())))
+
+        # Discriminate generator interpolation
+        D_interpolation = self.model.D(G_interpolation)
+
+        # Compute the gradients of D with respect to the noise generated input
+        gradients = torch.autograd.grad(outputs = D_interpolation, 
+                                        inputs = G_interpolation,
+                                        grad_outputs = to_cuda(torch.ones(D_interpolation.size())),
+                                        only_inputs = True,
+                                        create_graph = True,
+                                        retain_graph = True)[0]
+
+        # Full gradient penalty
+        grad_penalty = LAMBDA * torch.mean((gradients.norm(2, dim=1) - K)**2)
+        
+        # Compute DRAGAN loss for D
+        D_loss = DX_loss + DG_loss + grad_penalty
         
         return D_loss
     
@@ -201,20 +223,19 @@ class NSGANTrainer:
         """ Run 1 step of training for generator
         
         Input:
-            images: batch of images reshaped to [batch_size, -1]    
+            images: batch of images (reshaped to [batch_size, -1]) 
         Output:
-            G_loss: non-saturating loss for how well G(z) fools D, 
-            -E[log(D(G(z)))]
-        """        
+            G_loss: DRAGAN (non-saturating) loss for G, -E[log(D(G(z)))]
+        """   
         # Generate labels for the generator batch images (all 0, since they are fake)
         G_labels = to_cuda(torch.ones(images.shape[0], 1)) 
         
-        # Get noise (denoted z), classify it using G, then classify the output of G using D.
-        noise = self.compute_noise(images.shape[0], self.model.z_dim) # z
-        G_output = self.model.G(noise) # G(z)
+        # Get noise, classify it using G, then classify the output of G using D.
+        G_noise = self.compute_noise(images.shape[0], self.model.z_dim) # z
+        G_output = self.model.G(G_noise) # G(z)
         DG_score = self.model.D(G_output) # D(G(z))
         
-        # Compute the non-saturating loss for how D did versus the generations of G using sigmoid cross entropy
+        # Compute non-saturating G loss
         G_loss = F.binary_cross_entropy(DG_score, G_labels)
         
         return G_loss
@@ -244,6 +265,7 @@ class NSGANTrainer:
         images = images.view(images.shape[0], 28, 28)
         
         # Plot
+        plt.close()
         size_figure_grid = int(num_outputs**0.5)
         fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
         for i, j in product(range(size_figure_grid), range(size_figure_grid)):
@@ -286,17 +308,21 @@ class NSGANTrainer:
         self.model.load_state_dict(state)
 
 
-model = NSGAN(image_size=784, 
-              hidden_dim=256, 
-              z_dim=128)
+if __name__ == "__main__":
+    # Load in binarized MNIST data, separate into data loaders
+    train_iter, val_iter, test_iter = get_data()
 
-trainer = NSGANTrainer(model=model, 
-                       train_iter=train_iter, 
-                       val_iter=val_iter, 
-                       test_iter=test_iter,
-                       viz=False)
+    model = GAN(image_size=784, 
+                   hidden_dim=256, 
+                   z_dim=128)
 
-trainer.train(num_epochs=25, 
-              G_lr=2e-4, 
-              D_lr=2e-4, 
-              D_steps=1)
+    trainer = Trainer(model=model, 
+                            train_iter=train_iter, 
+                            val_iter=val_iter, 
+                            test_iter=test_iter,
+                            viz=False)
+
+    trainer.train(num_epochs=65,
+                  G_lr=1e-4,
+                  D_lr=1e-4,
+                  D_steps=1)
