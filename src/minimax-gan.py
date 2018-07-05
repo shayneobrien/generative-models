@@ -187,7 +187,8 @@ class MMGANTrainer:
                             
             # Progress logging
             print ("Epoch[%d/%d], G Loss: %.4f, D Loss: %.4f"
-                   %(epoch, num_epochs, np.mean(G_losses), np.mean(D_losses))) 
+                   %(epoch, num_epochs, np.mean(G_losses), np.mean(D_losses)))
+            self.num_epochs = epoch
             
             # Visualize generator progress
             self.generate_images(epoch)
@@ -272,6 +273,7 @@ class MMGANTrainer:
         images = images.view(images.shape[0], 28, 28)
         
         # Plot
+        plt.close()
         size_figure_grid = int(num_outputs**0.5)
         fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
         for i, j in product(range(size_figure_grid), range(size_figure_grid)):
@@ -285,18 +287,21 @@ class MMGANTrainer:
             outname = '../viz/' + self.name + '/'
             if not os.path.exists(outname):
                 os.makedirs(outname)
-            torchvision.utils.save_image(images.unsqueeze(1).data.cpu(), 
+            torchvision.utils.save_image(images.unsqueeze(1).data, 
                                          outname + 'reconst_%d.png'
                                          %(epoch), nrow = 5)
     
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
+        # Set style, figure size
         plt.style.use('ggplot')
         plt.rcParams["figure.figsize"] = (8,6)
 
-        plt.plot(self.Dlosses, 'r')
-        plt.plot(self.Glosses, 'g')
+        # Plot Discriminator loss in red, Generator loss in green
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Dlosses, 'r')
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Glosses, 'g')
         
+        # Add legend, title
         plt.legend(['Discriminator', 'Generator'])
         plt.title(self.name)
         plt.show()
