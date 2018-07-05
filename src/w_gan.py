@@ -32,7 +32,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm
 from load_data import get_data
-from .utils import *
+from utils import *
 
 
 class Generator(nn.Module):
@@ -66,7 +66,7 @@ class Discriminator(nn.Module):
         return discrimination
 
 
-class WGAN(nn.Module):
+class GAN(nn.Module):
     """ Super class to contain both Discriminator (D) and Generator (G) 
     """
     def __init__(self, image_size, hidden_dim, z_dim, output_dim=1):
@@ -78,7 +78,7 @@ class WGAN(nn.Module):
         self.z_dim = z_dim
 
 
-class WGANTrainer:
+class Trainer:
     """ Object to hold data iterators, train a GAN variant 
     """
     def __init__(self, model, train_iter, val_iter, test_iter, viz=False):

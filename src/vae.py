@@ -38,7 +38,7 @@ from copy import deepcopy
 from tqdm import tqdm
 from itertools import product
 from load_data import get_data
-from .utils import *
+from utils import *
 
 
 class Encoder(nn.Module):
