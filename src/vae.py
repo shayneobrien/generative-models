@@ -194,6 +194,8 @@ class Trainer:
         reconst_images, _, _ = self.model(images)
         reconst_images = reconst_images.view(reconst_images.shape[0], 28, 28)
         
+        # Plot
+        plt.close()
         size_figure_grid = int(reconst_images.shape[0]**0.5)
         fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
         for i, j in product(range(size_figure_grid), range(size_figure_grid)):
@@ -201,12 +203,18 @@ class Trainer:
             ax[i,j].get_yaxis().set_visible(False)
             ax[i,j].cla()
             ax[i,j].imshow(reconst_images[i+j].data.numpy(), cmap='gray')
-                        
+        
+        # Save
         if save:
-            if not os.path.exists('../viz/vae-viz/'):
-                os.makedirs('../viz/vae-viz/')
-            torchvision.utils.save_image(images.data.cpu(), '../viz/vae-viz/real.png', nrow=size_figure_grid)
-            torchvision.utils.save_image(reconst_images.unsqueeze(1).data.cpu(), '../viz/vae-viz/reconst_%d.png' %(epoch), nrow=size_figure_grid)
+            outname = '../viz/' + self.name + '/'
+            if not os.path.exists(outname):
+                os.makedirs(outname)
+            torchvision.utils.save_image(images.data, 
+                                         outname + 'real.png',
+                                         nrow=size_figure_grid)
+            torchvision.utils.save_image(reconst_images.unsqueeze(1).data, 
+                                         outname + 'reconst_%d.png' %(epoch),
+                                         nrow=size_figure_grid)
             
     def kl_divergence(self, mu, log_var):
         """ Compute Kullback-Leibler divergence """
@@ -309,10 +317,10 @@ if __name__ == "__main__":
     # Load in binzarized MNIST data, separate into data loaders
     train_iter, val_iter, test_iter = get_data()
 
-    # # Train VAE on binary MNIST
+
     model = VAE(image_size=784, 
-                hidden_dim=400, 
-                z_dim=20)
+            hidden_dim=400, 
+            z_dim=20)
 
     trainer = Trainer(model=model,
                          train_iter=train_iter, 
@@ -320,6 +328,7 @@ if __name__ == "__main__":
                          test_iter=test_iter,
                          viz=False)
 
+
     trainer.train(num_epochs=5,
-                  lr=1e-3,
-                  weight_decay=1e-5)
+              lr=1e-3,
+              weight_decay=1e-5)
