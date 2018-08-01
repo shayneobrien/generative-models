@@ -195,15 +195,18 @@ if __name__ == '__main__':
     # Load in binzarized MNIST data, separate into data loaders
     train_iter, val_iter, test_iter = get_data()
 
+    # Init model
     model = Autoencoder(image_size=784,
                         hidden_dim=32)
 
+    # Init trainer
     trainer = AutoencoderTrainer(model=model,
                                  train_iter=train_iter,
                                  val_iter=val_iter,
                                  test_iter=test_iter,
                                  viz=False)
 
+    # Train
     trainer.train(num_epochs=5,
                   lr=1e-3,
                   weight_decay=1e-5)

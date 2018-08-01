@@ -1,4 +1,6 @@
-""" (RaNSGAN)
+""" (RaGAN)
+This implementation uses non-saturating (NS) GAN as a case study.
+
 Relativistic GANs argue that the GAN generator should decrease the
 discriminator's output probability that real data is real in addition to
 increasing its output probability that fake data is real. By doing this, GANs

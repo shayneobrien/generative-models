@@ -59,7 +59,7 @@ class Discriminator(nn.Module):
         return discrimination
 
 
-class GAN(nn.Module):
+class NSGAN(nn.Module):
     """ Super class to contain both Discriminator (D) and Generator (G)
     """
     def __init__(self, image_size, hidden_dim, z_dim, output_dim=1):
@@ -70,7 +70,7 @@ class GAN(nn.Module):
         self.z_dim = z_dim
 
 
-class Trainer:
+class NSGANTrainer:
     """ Object to hold data iterators, train a GAN variant
     """
     def __init__(self, model, train_iter, val_iter, test_iter, viz=False):
@@ -283,16 +283,19 @@ if __name__ == "__main__":
     # Load in binarized MNIST data, separate into data loaders
     train_iter, val_iter, test_iter = get_data()
 
-    model = GAN(image_size=784,
+    # Init model
+    model = NSGAN(image_size=784,
                   hidden_dim=256,
                   z_dim=128)
 
-    trainer = Trainer(model=model,
+    # Init trainer
+    trainer = NSGANTrainer(model=model,
                            train_iter=train_iter,
                            val_iter=val_iter,
                            test_iter=test_iter,
                            viz=False)
 
+    # Train
     trainer.train(num_epochs=25,
                   G_lr=2e-4,
                   D_lr=2e-4,
