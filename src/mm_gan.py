@@ -46,7 +46,7 @@ class Generator(nn.Module):
 
     def forward(self, x):
         activated = F.relu(self.linear(x))
-        generation = F.sigmoid(self.generate(activated))
+        generation = torch.sigmoid(self.generate(activated))
         return generation
 
 
@@ -61,7 +61,7 @@ class Discriminator(nn.Module):
 
     def forward(self, x):
         activated = F.relu(self.linear(x))
-        discrimination = F.sigmoid(self.discriminate(activated))
+        discrimination = torch.sigmoid(self.discriminate(activated))
         return discrimination
 
 

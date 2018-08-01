@@ -309,7 +309,7 @@ if __name__ == '__main__':
                            test_iter=test_iter,
                            viz=False)
 
-    # Train for 25 epochs
+    # Train
     trainer.train(num_epochs=25,
                   G_lr=2e-4,
                   D_lr=2e-4,

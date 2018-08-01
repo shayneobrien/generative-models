@@ -69,7 +69,7 @@ class Decoder(nn.Module):
 
     def forward(self, z):
         activated = F.relu(self.linear(z))
-        reconstructed = F.sigmoid(self.recon(activated))
+        reconstructed = torch.sigmoid(self.recon(activated))
         return reconstructed
 
 
@@ -172,7 +172,7 @@ class Trainer:
 
         output, mu, log_var = self.model(images)
 
-        recon_loss = F.binary_cross_entropy(output, images, size_average=False)
+        recon_loss = F.binary_cross_entropy(output, images, reduce='sum')
         kl_diverge = self.kl_divergence(mu, log_var)
 
         return recon_loss, kl_diverge
