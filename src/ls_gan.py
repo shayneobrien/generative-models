@@ -67,10 +67,10 @@ class LSGAN(nn.Module):
     def __init__(self, image_size, hidden_dim, z_dim, output_dim=1):
         super().__init__()
 
+        self.__dict__.update(locals())
+
         self.G = Generator(image_size, hidden_dim, z_dim)
         self.D = Discriminator(image_size, hidden_dim, output_dim)
-
-        self.z_dim = z_dim
 
 
 class LSGANTrainer:

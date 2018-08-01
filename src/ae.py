@@ -61,6 +61,8 @@ class Autoencoder(nn.Module):
     def __init__(self, image_size=784, hidden_dim=32):
         super().__init__()
 
+        self.__dict__.update(locals())
+        
         self.encoder = Encoder(image_size=image_size, hidden_dim=hidden_dim)
         self.decoder = Decoder(hidden_dim=hidden_dim, image_size=image_size)
 

@@ -78,6 +78,8 @@ class VAE(nn.Module):
     """
     def __init__(self, image_size=784, hidden_dim=400, z_dim=20):
         super(VAE, self).__init__()
+        
+        self.__dict__.update(locals())
 
         self.encoder = Encoder(image_size = image_size, hidden_dim = hidden_dim, z_dim = z_dim)
         self.decoder = Decoder(z_dim = z_dim, hidden_dim = hidden_dim, image_size = image_size)
