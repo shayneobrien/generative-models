@@ -206,7 +206,7 @@ class MMGANTrainer:
         DX_loss = F.binary_cross_entropy(DX_score, X_labels)
 
         # Sample noise z, generate output G(z)
-        noise = self.compute_noise(images.shape[0], model.z_dim)
+        noise = self.compute_noise(images.shape[0], self.model.z_dim)
         G_output = self.model.G(noise)
 
         # Classify the fake batch images, get the loss for these using sigmoid cross entropy
