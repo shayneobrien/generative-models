@@ -298,7 +298,7 @@ if __name__ == "__main__":
     train_iter, val_iter, test_iter = get_data()
 
     # Init model
-    model = WGANGP(image_size=784, 
+    model = WGANGP(image_size=784,
                   hidden_dim=256,
                   z_dim=128)
 
