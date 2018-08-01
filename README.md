@@ -1,5 +1,5 @@
 # OVERVIEW
-PyTorch version: 0.4.0 | Python 3.6.5
+PyTorch version: 0.4.1 | Python 3.6.5
 
 Commented / annotated implementations and comparative introductions for minimax, non-saturating, wasserstein, wasserstein gradient penalty, least squares, deep regret analytic, bounded equilibrium generative adversarial networks, relativistic (GANs), and variational autoencoder (VAE). Paper links are supplied at the beginning of each file with a short summary of the paper. See src folder for files to run via terminal, or notebooks folder for Jupyter notebooks via your local browser. The Jupyter notebooks contain in-notebook visualizations. All code in this repository operates in a generative, unsupervised manner on binary MNIST.
 
