@@ -1,1 +1,5 @@
-env/
+env
+viz
+data
+__pycache__
+.ipynb_checkpoints
