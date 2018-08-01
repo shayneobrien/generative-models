@@ -209,7 +209,7 @@ class Trainer:
             outname = '../viz/' + self.name + '/'
             if not os.path.exists(outname):
                 os.makedirs(outname)
-            torchvision.utils.save_image(self.debugging_image.data,
+            torchvision.utils.save_image(images.data,
                                          outname + 'real.png',
                                          nrow=size_figure_grid)
             torchvision.utils.save_image(reconst_images.unsqueeze(1).data,

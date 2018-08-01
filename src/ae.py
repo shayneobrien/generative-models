@@ -1,9 +1,9 @@
 """ (Autoencoder)
 Standard Autoencoder
 
-Autoencoders take an input representation, encode it into a reduced dimensionality
-space using an 'encoder network', and then decode it using a 'decoder network' back
-to its original representation
+Autoencoders take an input representation, encode it into a reduced
+dimensionality space using an 'encoder network', and then decode it using a
+'decoder network' back to its original representation
 """
 
 import torch, torchvision
@@ -52,7 +52,7 @@ class Decoder(nn.Module):
         self.linear = nn.Linear(hidden_dim, image_size)
 
     def forward(self, encoder_output):
-        return F.sigmoid(self.linear(encoder_output))
+        return torch.sigmoid(self.linear(encoder_output))
 
 
 class Autoencoder(nn.Module):
@@ -83,7 +83,8 @@ class AutoencoderTrainer:
 
     def train(self, num_epochs, lr=1e-3, weight_decay=1e-5):
         """ Train a Variational Autoencoder
-            Logs progress using total loss, reconstruction loss, kl_divergence, and validation loss
+            Logs progress using total loss, reconstruction loss, kl_divergence,
+            and validation loss
 
         Inputs:
             num_epochs: int, number of epochs to train for
@@ -95,12 +96,13 @@ class AutoencoderTrainer:
         best_val_loss = 1e10
 
         # Adam optimizer, sigmoid cross entropy for reconstructing binary MNIST
-        optimizer = torch.optim.Adam(params=[p for p in self.model.parameters() if p.requires_grad],
+        optimizer = torch.optim.Adam(params=[p for p in self.model.parameters()
+                                            if p.requires_grad],
                                      lr=lr,
                                      weight_decay=weight_decay)
 
         # Begin training
-        for epoch in tqdm(range(1, num_epochs+1)):
+        for epoch in tqdm_notebook(range(1, num_epochs+1)):
 
             self.model.train()
             epoch_loss = []
@@ -110,7 +112,7 @@ class AutoencoderTrainer:
                 # Zero out gradients
                 optimizer.zero_grad()
 
-                # Compute reconstruction loss, Kullback-Leibler divergence for a batch
+                # Compute batch reconstruction loss, Kullback-Leibler divergence
                 batch_loss = self.compute_batch(batch)
 
                 # Update parameters
@@ -144,7 +146,7 @@ class AutoencoderTrainer:
 
         output = self.model(images)
 
-        recon_loss = F.binary_cross_entropy(output, images, size_average=False)
+        recon_loss = F.binary_cross_entropy(output, images, reduction='sum')
 
         return recon_loss
 
@@ -153,7 +155,7 @@ class AutoencoderTrainer:
         return np.mean([self.compute_batch(batch).item() for batch in iterator])
 
     def reconstruct_images(self, images, epoch, save=True):
-        """Reconstruct a fixed input at each epoch for progress visualization """
+        """Reconstruct a fixed input at each epoch for progress visualization"""
         # Reshape images, VAE output
         images = to_cuda(images.view(images.shape[0], -1))
         reconst_images = self.model(images)
@@ -162,7 +164,7 @@ class AutoencoderTrainer:
         # Plot
         plt.close()
         size_figure_grid = int(reconst_images.shape[0]**0.5)
-        fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
+        fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5,5))
         for i, j in product(range(size_figure_grid), range(size_figure_grid)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
@@ -171,10 +173,10 @@ class AutoencoderTrainer:
 
         # Save
         if save:
-            outname = '../viz/' + self.name + '/'
+            outname = '../viz/' + trainer.name + '/'
             if not os.path.exists(outname):
                 os.makedirs(outname)
-            torchvision.utils.save_image(images.data,
+            torchvision.utils.save_image(trainer.debugging_image.data,
                                          outname + 'real.png',
                                          nrow=size_figure_grid)
             torchvision.utils.save_image(reconst_images.unsqueeze(1).data,
@@ -186,7 +188,7 @@ class AutoencoderTrainer:
         torch.save(self.model.state_dict(), savepath)
 
     def load_model(self, loadpath):
-        """ Load state dictionary into model. If model not specified, instantiate it """
+        """ Load state dictionary into model """
         state = torch.load(loadpath)
         self.model.load_state_dict(state)
 
