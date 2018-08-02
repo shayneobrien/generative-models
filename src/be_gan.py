@@ -115,18 +115,20 @@ class BEGANTrainer:
 
         self.viz = viz
 
-    def train(self, num_epochs, G_lr=1e-4, D_lr=1e-4, D_steps=1, GAMMA=0.50, LAMBDA=1e-3, K=0.00):
+    def train(self, num_epochs, G_lr=1e-4, D_lr=1e-4, D_steps=1,
+                    GAMMA=0.50, LAMBDA=1e-3, K=0.00):
         """ Train a Bounded Equilibrium GAN
-            Logs progress using G loss, D loss, visualizations of Generator output.
+            Logs progress using G loss, D loss, convergence metric,
+            visualizations of Generator output.
 
         Inputs:
             num_epochs: int, number of epochs to train for
             G_lr: float, learning rate for generator's Adam optimizer (default 1e-4)
             D_lr: float, learning rate for discriminator's Adam optimizer (default 1e-4)
             D_steps: int, training step ratio for how often to train D compared to G (default 1)
-            GAMMA: float, hyperparameter to balance equilibrium between G and D learning objectives (default 0.50)
+            GAMMA: float, balance equilibrium between G and D objectives (default 0.50)
             LAMBDA: float, weight D loss for updating K (default 1e-3)
-            K: float, initialization for how much to emphasize loss(D(G(z))) in total D loss (default 0.00)
+            K: float, how much to initially emphasize loss(D(G(z))) in total D loss (default 0.00)
         """
 
         # Adam optimizers
