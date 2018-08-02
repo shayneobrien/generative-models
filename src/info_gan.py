@@ -143,8 +143,8 @@ class InfoGANTrainer:
                       'G': [p for p in self.model.G.parameters() if p.requires_grad],
                       'Q': [p for p in self.model.Q.parameters() if p.requires_grad]}
 
-        G_optimizer = optim.Adam(params=parameters['G'], lr=G_lr)
         D_optimizer = optim.Adam(params=parameters['D'], lr=D_lr)
+        G_optimizer = optim.Adam(params=parameters['G'], lr=G_lr)
         MI_optimizer = optim.Adam(params=(parameters['G']+parameters['Q']), lr=G_lr)
 
         # Approximate steps/epoch given D_steps per epoch

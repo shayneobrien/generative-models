@@ -38,6 +38,7 @@ during gradient descent.
 
 import torch, torchvision
 import torch.nn as nn
+import torch.optim as optim
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -47,7 +48,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from itertools import product
-from tqdm import tqdm_notebook
+from tqdm import tqdm
 from load_data import get_data
 
 def to_cuda(x):
@@ -132,8 +133,8 @@ class BEGANTrainer:
         """
 
         # Adam optimizers
-        G_optimizer = torch.optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
-        D_optimizer = torch.optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
+        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
+        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
 
         # Reduce learning rate by factor of 2 if convergence_metric stops decreasing by a threshold for last five epochs
         G_scheduler = ReduceLROnPlateau(G_optimizer, factor=0.50, threshold=0.01, patience=5*len(train_iter))
@@ -143,7 +144,7 @@ class BEGANTrainer:
         epoch_steps = int(np.ceil(len(train_iter) / (D_steps)))
 
         # Begin training
-        for epoch in tqdm_notebook(range(1, num_epochs + 1)):
+        for epoch in tqdm(range(1, num_epochs + 1)):
             self.model.train()
             G_losses, D_losses = [], []
 

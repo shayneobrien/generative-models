@@ -25,6 +25,7 @@ did not know.
 
 import torch, torchvision
 import torch.nn as nn
+import torch.optim as optim
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torchvision.transforms import ToPILImage
@@ -78,7 +79,7 @@ class VAE(nn.Module):
     """
     def __init__(self, image_size=784, hidden_dim=400, z_dim=20):
         super(VAE, self).__init__()
-        
+
         self.__dict__.update(locals())
 
         self.encoder = Encoder(image_size = image_size, hidden_dim = hidden_dim, z_dim = z_dim)
@@ -124,7 +125,7 @@ class Trainer:
         best_val_loss = 1e10
 
         # Adam optimizer, sigmoid cross entropy for reconstructing binary MNIST
-        optimizer = torch.optim.Adam(params=[p for p in self.model.parameters() if p.requires_grad], lr=lr, weight_decay=weight_decay)
+        optimizer = optim.Adam(params=[p for p in self.model.parameters() if p.requires_grad], lr=lr, weight_decay=weight_decay)
 
         # Begin training
         for epoch in tqdm(range(1, num_epochs+1)):
