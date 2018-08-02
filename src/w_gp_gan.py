@@ -28,6 +28,7 @@ from tqdm import tqdm
 from load_data import get_data
 from utils import *
 
+
 class Generator(nn.Module):
     """ Generator. Input is noise, output is a generated image.
     """
@@ -186,7 +187,7 @@ class WGANGPTrainer:
 
         # Generate images from the noise, ensure unit gradient norm 1
         # See Section 4 and Algorithm 1 of original paper for full explanation.
-        G_interpolation = epsilon*images + (1-epsilon)*G_output # negation doesn't matter; we square later on
+        G_interpolation = epsilon*images + (1-epsilon)*G_output
         D_interpolation = self.model.D(G_interpolation)
 
         # Compute the gradients of D with respect to the noise generated input

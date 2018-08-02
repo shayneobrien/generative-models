@@ -39,12 +39,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm_notebook
 from load_data import get_data
-
-def to_cuda(x):
-    """ Cuda-erize a tensor """
-    if torch.cuda.is_available():
-        x = x.cuda()
-    return x
+from utils import *
 
 
 class Generator(nn.Module):
