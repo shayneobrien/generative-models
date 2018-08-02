@@ -3,3 +3,5 @@ viz
 data
 __pycache__
 .ipynb_checkpoints
+12-self-attention-gan.ipynb
+13-progressive-gan.ipynb
