@@ -82,16 +82,15 @@ class Divergence:
     """ Compute G and D loss using an f-divergence metric.
     Implementations based on Table 6 (Appendix C) of the arxiv paper.
     """
-    #TODO: test each
     def __init__(self, method):
         self.method = method.lower().strip()
         assert self.method in ['total_vartiation',
-                          'forward_kl',
-                          'reverse_kl',
-                          'hellinger',
-                          'pearson',
-                          'neyman',
-                          'jensen_shannon'], \
+                               'forward_kl',
+                               'reverse_kl',
+                               'hellinger',
+                               'pearson',
+#                                'neyman', #TODO: fix neyman
+                               'jensen_shannon'], \
             'Invalid divergence.'
 
     def D_loss(self, DX_score, DG_score):
@@ -107,16 +106,18 @@ class Divergence:
             return -(torch.mean(-torch.exp(DX_score)) - torch.mean(-1-DG_score))
 
         elif self.method == 'hellinger':
-            return -(torch.mean(1-torch.exp(DX_score)) - torch.mean((1-torch.exp(DG_score))/(torch.exp(DG_score))))
+            return -(torch.mean(1-torch.exp(DX_score)) /
+                    - torch.mean((1-torch.exp(DG_score))/(torch.exp(DG_score))))
 
         elif self.method == 'pearson':
             return -(torch.mean(DX_score) - torch.mean(0.25*DG_score**2 + DG_score))
 
         elif self.method == 'neyman':
-            return -(torch.mean(1-torch.exp(DX_score)) - torch.mean(2 - 2*(1-DG_score)**0.25))
+            return -(torch.mean(1-torch.exp(DX_score)) - torch.mean(2 - 2*(1-DG_score)**0.50))
 
         elif self.method == 'jensen_shannon':
-            return -(torch.mean(torch.log(torch.tensor(2.))-torch.log(1+torch.exp(-DX_score))) - torch.mean(-torch.log(torch.tensor(2.)-torch.exp(DG_score))))
+            return -(torch.mean(torch.log(torch.tensor(2.))-torch.log(1+torch.exp(-DX_score+1e-8))) /
+                    - torch.mean(-torch.log(torch.tensor(2.)-torch.exp(DG_score)+1e-8)))
 
     def G_loss(self, DG_score):
         """ Compute batch loss for generator using f-divergence metric """
@@ -134,13 +135,13 @@ class Divergence:
             return -torch.mean((1-torch.exp(DG_score))/(torch.exp(DG_score)))
 
         elif self.method == 'pearson':
-            return -torch.mean(0.25*D_fake**2 + D_fake)
+            return -torch.mean(0.25*DG_score**2 + DG_score)
 
         elif self.method == 'neyman':
-            return -torch.mean(2 - 2*(1-DG_score)**0.25)
+            return -torch.mean(2 - 2*(1-DG_score)**0.50)
 
         elif self.method == 'jensen_shannon':
-            return -torch.mean(-torch.log(torch.tensor(2.)-torch.exp(DG_score)))
+            return -torch.mean(-torch.log(torch.tensor(2.)-torch.exp(DG_score)+1e-8))
 
 
 class fGANTrainer:
