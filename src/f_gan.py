@@ -1,25 +1,25 @@
-""" (RaGAN)
-This implementation uses non-saturating (NS) GAN as a case study.
+""" (f-GAN)
 
-Relativistic GANs argue that the GAN generator should decrease the
-discriminator's output probability that real data is real in addition to
-increasing its output probability that fake data is real. By doing this, GANs
-are claimed to be more stable and generate higher quality images.
+The authors empirically demonstrate that when the generative model is
+misspecified and does not contain the true distribution, the divergence
+function used for estimation has a strong influence on which model is
+learned. To address this issue, they theoretically show that the
+generative-adversarial approach is a special case of an existing, more
+general variational divergence estimation approach and that any
+f-divergence can be used for training generative neural samplers (which
+are defined as models that take a random input vector and produce a sample
+from a probability distribution defined by the network weights). They
+then empirically show the effect of using different training
+divergences on a trained model's average log likelihood of sampled data.
 
-Discriminator loss is changed such that the discriminator estimates the
-probability that the given real data is more realistic than a randomly sampled
-fake data. Generator loss is change such that real data is less likely to be
-classified as real and fake data is more likely to be classified as real.
+They test (forward) Kullback-Leibler, reverse Kullback-Leibler, Pearson
+chi-squared, Neyman chi-squared, squared Hellinger, Jensen-Shannon,
+and Jeffrey divergences.
 
-For computational efficiency, the discriminator estimates the probability that
-the given real data is more realistic than fake data, on average. Otherwise, the
-network would need to consider all combinations of real and fake data in the
-minibatch. This would require O(m^2) instead of O(m), where m is batch size.
+We exclude Jeffrey due to poor performance and nontrivial implementation.
+(see scipy.special.lambertw otherwise)
 
-L(D) = -E[log( sigmoid(D(x) - E[D(G(z))]) )] - E[log(1 - sigmoid(D(G(z)) - E[D(x)]))]
-L(G) = -E[log( sigmoid(D(G(z)) - E[D(x)]) )] - E[log(1 - sigmoid(D(x) - E[D(G(z))]))]
-
-https://arxiv.org/pdf/1807.00734.pdf
+https://arxiv.org/pdf/1606.00709.pdf
 """
 
 import torch, torchvision
@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from itertools import product
-from tqdm import tqdm
+from tqdm import tqdm_notebook
 from load_data import get_data
 from utils import *
 
@@ -66,7 +66,7 @@ class Discriminator(nn.Module):
         return discrimination
 
 
-class RaNSGAN(nn.Module):
+class fGAN(nn.Module):
     """ Super class to contain both Discriminator (D) and Generator (G)
     """
     def __init__(self, image_size, hidden_dim, z_dim, output_dim=1):
@@ -78,7 +78,72 @@ class RaNSGAN(nn.Module):
         self.D = Discriminator(image_size, hidden_dim, output_dim)
 
 
-class RaNSGANTrainer:
+class Divergence:
+    """ Compute G and D loss using an f-divergence metric.
+    Implementations based on Table 6 (Appendix C) of the arxiv paper.
+    """
+    #TODO: test each
+    def __init__(self, method):
+        self.method = method.lower().strip()
+        assert self.method in ['total_vartiation',
+                          'forward_kl',
+                          'reverse_kl',
+                          'hellinger',
+                          'pearson',
+                          'neyman',
+                          'jensen_shannon'], \
+            'Invalid divergence.'
+
+    def D_loss(self, DX_score, DG_score):
+        """ Compute batch loss for discriminator using f-divergence metric """
+
+        if self.method == 'total_vartiation':
+            return -(torch.mean(0.5*torch.tanh(DX_score)) - torch.mean(0.5*torch.tanh(DG_score)))
+
+        elif self.method == 'forward_kl':
+            return -(torch.mean(DX_score) - torch.mean(torch.exp(DG_score-1)))
+
+        elif self.method == 'reverse_kl':
+            return -(torch.mean(-torch.exp(DX_score)) - torch.mean(-1-DG_score))
+
+        elif self.method == 'hellinger':
+            return -(torch.mean(1-torch.exp(DX_score)) - torch.mean((1-torch.exp(DG_score))/(torch.exp(DG_score))))
+
+        elif self.method == 'pearson':
+            return -(torch.mean(DX_score) - torch.mean(0.25*DG_score**2 + DG_score))
+
+        elif self.method == 'neyman':
+            return -(torch.mean(1-torch.exp(DX_score)) - torch.mean(2 - 2*(1-DG_score)**0.25))
+
+        elif self.method == 'jensen_shannon':
+            return -(torch.mean(torch.log(torch.tensor(2.))-torch.log(1+torch.exp(-DX_score))) - torch.mean(-torch.log(torch.tensor(2.)-torch.exp(DG_score))))
+
+    def G_loss(self, DG_score):
+        """ Compute batch loss for generator using f-divergence metric """
+
+        if self.method == 'total_vartiation':
+            return -torch.mean(0.5*torch.tanh(DG_score))
+
+        elif self.method == 'forward_kl':
+            return -torch.mean(torch.exp(DG_score-1))
+
+        elif self.method == 'reverse_kl':
+            return -torch.mean(-1-DG_score)
+
+        elif self.method == 'hellinger':
+            return -torch.mean((1-torch.exp(DG_score))/(torch.exp(DG_score)))
+
+        elif self.method == 'pearson':
+            return -torch.mean(0.25*D_fake**2 + D_fake)
+
+        elif self.method == 'neyman':
+            return -torch.mean(2 - 2*(1-DG_score)**0.25)
+
+        elif self.method == 'jensen_shannon':
+            return -torch.mean(-torch.log(torch.tensor(2.)-torch.exp(DG_score)))
+
+
+class fGANTrainer:
     """ Object to hold data iterators, train a GAN variant
     """
     def __init__(self, model, train_iter, val_iter, test_iter, viz=False):
@@ -94,16 +159,20 @@ class RaNSGANTrainer:
 
         self.viz = viz
 
-    def train(self, num_epochs, G_lr=2e-4, D_lr=2e-4, D_steps=1):
+    def train(self, num_epochs, method='forward_kl', G_lr=1e-4, D_lr=1e-4, D_steps=1):
         """ Train a vanilla GAN using the non-saturating gradients loss for the generator.
             Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            G_lr: float, learning rate for generator's Adam optimizer (default 2e-4)
-            D_lr: float, learning rate for discriminator's Adam optimizer (default 2e-4)
+            method: str, divergence metric to optimize (default 'forward_kl')
+            G_lr: float, learning rate for generator's Adam optimizer (default 1e-4)
+            D_lr: float, learning rate for discriminator's Adam optimizer (default 1e-4)
             D_steps: int, training step ratio for how often to train D compared to G (default 1)
         """
+        # Initialize loss
+        self.loss_fnc = Divergence(method)
+
         # Initialize optimizers
         G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
         D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
@@ -112,7 +181,7 @@ class RaNSGANTrainer:
         epoch_steps = int(np.ceil(len(train_iter) / (D_steps)))
 
         # Begin training
-        for epoch in tqdm(range(1, num_epochs+1)):
+        for epoch in tqdm_notebook(range(1, num_epochs+1)):
             self.model.train()
             G_losses, D_losses = [], []
 
@@ -128,7 +197,7 @@ class RaNSGANTrainer:
                     # TRAINING D: Zero out gradients for D
                     D_optimizer.zero_grad()
 
-                    # Learn to discriminate between real and generated images
+                    # Train the discriminator to learn to discriminate between real and generated images
                     D_loss = self.train_D(images)
 
                     # Update parameters
@@ -144,7 +213,7 @@ class RaNSGANTrainer:
                 # TRAINING G: Zero out gradients for G
                 G_optimizer.zero_grad()
 
-                # Learn to generate images that fool the discriminator
+                # Train the generator to generate images that fool the discriminator
                 G_loss = self.train_G(images)
 
                 # Log results, update parameters
@@ -174,7 +243,6 @@ class RaNSGANTrainer:
             images: batch of images (reshaped to [batch_size, 784])
         Output:
             D_loss: non-saturing loss for discriminator,
-            -E[log( sigmoid(D(x) - E[D(G(z))]) )] - E[log(1 - sigmoid(D(G(z)) - E[D(x)]))]
         """
         # Generate labels (ones indicate real images, zeros indicate generated)
         X_labels = to_cuda(torch.ones(images.shape[0], 1))
@@ -184,16 +252,14 @@ class RaNSGANTrainer:
         DX_score = self.model.D(images)
 
         # Sample noise z, generate output G(z)
-        noise = self.compute_noise(images.shape[0], self.model.z_dim)
+        noise = self.compute_noise(images.shape[0], model.z_dim)
         G_output = self.model.G(noise)
 
         # Classify the fake batch images, get the loss for these using sigmoid cross entropy
         DG_score = self.model.D(G_output)
 
-        # Compute D loss
-        DX_loss = F.binary_cross_entropy_with_logits(DX_score - torch.mean(DG_score), X_labels)
-        DG_loss = F.binary_cross_entropy_with_logits(DG_score - torch.mean(DX_score), G_labels)
-        D_loss = (DX_loss + DG_loss)/2
+        # Compute f-divergence loss
+        D_loss = self.loss_fnc.D_loss(DX_score, DG_score)
 
         return D_loss
 
@@ -204,18 +270,17 @@ class RaNSGANTrainer:
             images: batch of images reshaped to [batch_size, -1]
         Output:
             G_loss: non-saturating loss for how well G(z) fools D,
-            -E[log( sigmoid(D(G(z)) - E[D(x)]) )] - E[log(1 - sigmoid(D(x) - E[D(G(z))]))]
         """
         # Generate labels for the generator batch images (all 0, since they are fake)
         G_labels = to_cuda(torch.ones(images.shape[0], 1))
 
-        # Get noise (z), classify using G, then classify the output of G using D.
+        # Get noise (denoted z), classify it using G, then classify the output of G using D.
         noise = self.compute_noise(images.shape[0], self.model.z_dim) # z
         G_output = self.model.G(noise) # G(z)
         DG_score = self.model.D(G_output) # D(G(z))
 
-        # Compute the non-saturating loss for how D did discrimination G(z)
-        G_loss = F.binary_cross_entropy(DG_score, G_labels)
+        # Compute f-divergence loss
+        G_loss = self.loss_fnc.G_loss(DG_score)
 
         return G_loss
 
@@ -269,12 +334,8 @@ class RaNSGANTrainer:
         plt.rcParams["figure.figsize"] = (8,6)
 
         # Plot Discriminator loss in red, Generator loss in green
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
-                 self.Dlosses,
-                 'r')
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
-                 self.Glosses,
-                 'g')
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Dlosses, 'r')
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Glosses, 'g')
 
         # Add legend, title
         plt.legend(['Discriminator', 'Generator'])
@@ -290,24 +351,26 @@ class RaNSGANTrainer:
         state = torch.load(loadpath)
         self.model.load_state_dict(state)
 
+
 if __name__ == '__main__':
+
     # Load in binarized MNIST data, separate into data loaders
     train_iter, val_iter, test_iter = get_data()
 
-    # Initialize model
-    model = RaNSGAN(image_size=784,
-                    hidden_dim=256,
-                    z_dim=128)
+    # Init model
+    model = fGAN(image_size=784,
+                 hidden_dim=256,
+                 z_dim=128)
 
-    # Initialize trainer
-    trainer = RaNSGANTrainer(model=model,
-                            train_iter=train_iter,
-                            val_iter=val_iter,
-                            test_iter=test_iter,
-                            viz=False)
-
+    # Init trainer
+    trainer = fGANTrainer(model=model,
+                          train_iter=train_iter,
+                          val_iter=val_iter,
+                          test_iter=test_iter,
+                          viz=False)
     # Train
     trainer.train(num_epochs=25,
-                  G_lr=2e-4,
-                  D_lr=2e-4,
+                  method='forward_kl',
+                  G_lr=1e-4,
+                  D_lr=1e-4,
                   D_steps=1)

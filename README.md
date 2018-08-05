@@ -7,8 +7,8 @@ The main file changes can be see in the train, train_D, and train_G of the Train
 
 # TO ADD
 Models: CVAE, denoising VAE | Self-attention GAN, Primal-Dual Wasserstein GAN, adversarial autoencoder (?), Fisher GAN (?), Fairness GAN (?), Bayesian GAN (?)
-
 Architectures: Add convolutional GAN types
+Finishing touches: fill out notebooks, update notebooks to src content, src linebreaks
 
 # NOTE
 The architecture chosen in these implementations for both the generator (G) and discriminator (D) consists of a simple, two-layer feedforward network. While this will give sensible output for MNIST, in practice it is recommended to use deep convolutional architectures (i.e. DCGANs) to get nicer visualizations. This can be done by editing the Generator and Discriminator classes for GANs, or the Encoder and Decoder classes for VAEs.
