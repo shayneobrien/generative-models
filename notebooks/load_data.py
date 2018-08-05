@@ -2,19 +2,19 @@
 import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-    
+
 def get_data():
     """ Load data for binared MNIST """
     torch.manual_seed(3435)
 
     """ Download our data """
     train_dataset = datasets.MNIST(root='./data/',
-                                train=True, 
+                                train=True,
                                 transform=transforms.ToTensor(),
                                 download=True)
 
     test_dataset = datasets.MNIST(root='./data/',
-                               train=False, 
+                               train=False,
                                transform=transforms.ToTensor())
 
     """ Use greyscale values as sampling probabilities to get back to {0,1} """
@@ -40,4 +40,3 @@ def get_data():
     val_iter = torch.utils.data.DataLoader(val, batch_size=BATCH_SIZE, shuffle=True)
     test_iter = torch.utils.data.DataLoader(test, batch_size=BATCH_SIZE, shuffle=True)
     return train_iter, val_iter, test_iter
-
