@@ -35,6 +35,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm_notebook
 from load_data import get_data
+from utils import *
 
 
 class Generator(nn.Module):
@@ -92,19 +93,22 @@ class FisherGANTrainer:
 
         self.viz = viz
 
-    def train(self, num_epochs, G_lr=2e-4, D_lr=2e-4, D_steps=1, LAMBDA=0.):
+    def train(self, num_epochs, G_lr=1e-4, D_lr=1e-4, D_steps=1, LAMBDA=0., RHO=1e-6):
         """ Train FisherGAN using IPM framework
-            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
+            Logs progress using G loss, D loss, G(x), D(G(x)), IPM ratio (want close to 0.50),
+            Lambda (want close to 0), and visualizations of Generator output.
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            G_lr: float, learning rate for generator's Adam optimizer (default 2e-4)
-            D_lr: float, learning rate for discriminator's Adam optimizer (default 2e-4)
+            G_lr: float, learning rate for generator's Adam optimizer (default 1e-4)
+            D_lr: float, learning rate for discriminator's Adam optimizer (default 1e-4)
             D_steps: int, training step ratio for how often to train D compared to G (default 1)
-            LAMBDA: float, initialized
+            LAMBDA: float, initial weight on constraint term (default 0.)
+            RHO: float, quadratic penalty weight (default 1e-6)
         """
         # Initialize alpha
-        self.LAMBDA = to_cuda(torch.tensor(LAMBDA, requires_grad=True))
+        self.LAMBDA = to_var(torch.zeros(1))
+        self.RHO = to_var(torch.tensor(RHO))
 
         # Initialize optimizers
         G_optimizer = torch.optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
@@ -131,10 +135,16 @@ class FisherGANTrainer:
                     D_optimizer.zero_grad()
 
                     # Train the discriminator to learn to discriminate between real and generated images
-                    D_loss = self.train_D(images)
+                    D_loss, IPM_ratio = self.train_D(images)
 
                     # Update parameters
                     D_loss.backward()
+
+                    # Minimize lambda for 'artisinal SGD'
+                    self.LAMBDA = self.LAMBDA + self.RHO*self.LAMBDA.grad
+                    self.LAMBDA = to_cuda(self.LAMBDA.detach().requires_grad_(True))
+
+                    # Now step optimizer
                     D_optimizer.step()
 
                     # Log results, backpropagate the discriminator network
@@ -159,8 +169,9 @@ class FisherGANTrainer:
             self.Dlosses.extend(D_losses)
 
             # Progress logging
-            print ("Epoch[%d/%d], G Loss: %.4f, D Loss: %.4f"
-                   %(epoch, num_epochs, np.mean(G_losses), np.mean(D_losses)))
+            print ("Epoch[%d/%d], G Loss: %.4f, D Loss: %.4f, IPM ratio: %.4f, Lambda: %.4f"
+                   %(epoch, num_epochs, np.mean(G_losses), np.mean(D_losses),
+                     IPM_ratio, self.LAMBDA))
             self.num_epochs = epoch
 
             # Visualize generator progress
@@ -169,7 +180,7 @@ class FisherGANTrainer:
             if self.viz:
                 plt.show()
 
-    def train_D(self, images, RHO=1e-6):
+    def train_D(self, images):
         """ Run 1 step of training for discriminator
 
         Input:
@@ -197,12 +208,13 @@ class FisherGANTrainer:
         OMEGA = 1 - (0.5*DX_moment_2 + 0.5*DG_moment_2)
 
         # Compute loss (Eqn. 9, but differs slightly since we optimize negative gradients)
-        D_loss = -((DX_moment_1-DG_moment_1) + self.LAMBDA*OMEGA - (RHO/2)*(OMEGA**2))
+        D_loss = -((DX_moment_1-DG_moment_1) + self.LAMBDA*OMEGA - (self.RHO/2)*(OMEGA**2))
 
-        # Minimize lambda for 'artisinal SGD'
-        self.LAMBDA = RHO * self.LAMBDA
+        # For progress logging
+        IPM_ratio = DX_moment_1.item() - DG_moment_1.item() \
+                    / 0.5*(DX_moment_2.item() - DG_moment_2.item())**0.5
 
-        return D_loss
+        return D_loss, IPM_ratio
 
     def train_G(self, images):
         """ Run 1 step of training for generator
