@@ -172,25 +172,22 @@ class DRAGANTrainer:
             model: model instantiation
             images: batch of images (reshaped to [batch_size, 784])
         Output:
-            D_loss: DRAGAN loss for discriminator, -E[log(D(x))] - E[log(1 - D(G(z)))] + λE[(||∇ D(G(z))|| - 1)^2]
+            D_loss: DRAGAN loss for discriminator,
+            -E[log(D(x))] - E[log(1 - D(G(z)))] + λE[(||∇ D(G(z))|| - 1)^2]
         """
-
-        # NON-SATURATING LOSS STEPS:
-        # Generate labels for the real and generated images (real is 1, generated is 0)
-        X_labels = to_cuda(torch.ones(images.shape[0], 1))
-        G_labels = to_cuda(torch.zeros(images.shape[0], 1))
 
         # Classify the real batch images, get the loss for these
         DX_score = self.model.D(images)
-        DX_loss = F.binary_cross_entropy(DX_score, X_labels)
 
-        # Sample outputs from the generator
+        # Sample noise z, generate output G(z)
         noise = self.compute_noise(images.shape[0], self.model.z_dim)
         G_output = self.model.G(noise)
 
-        # Classify the fake batch images, get the loss for these (labels being all 0, since they are fake)
+        # Classify the fake batch images, get the loss for these using sigmoid cross entropy
         DG_score = self.model.D(G_output)
-        DG_loss = F.binary_cross_entropy(DG_score, G_labels)
+
+        # Compute vanilla (original paper) D loss
+        D_loss = -torch.mean(torch.log(DX_score + 1e-8) + torch.log(1 - DG_score + 1e-8))
 
         # GRADIENT PENALTY STEPS:
         # Uniformly sample along one straight line per each batch entry.
@@ -215,7 +212,7 @@ class DRAGANTrainer:
         grad_penalty = LAMBDA * torch.mean((gradients.norm(2, dim=1) - K)**2)
 
         # Compute DRAGAN loss for D
-        D_loss = DX_loss + DG_loss + grad_penalty
+        D_loss = D_loss + grad_penalty
 
         return D_loss
 
@@ -227,16 +224,13 @@ class DRAGANTrainer:
         Output:
             G_loss: DRAGAN (non-saturating) loss for G, -E[log(D(G(z)))]
         """
-        # Generate labels for the generator batch images (all 0, since they are fake)
-        G_labels = to_cuda(torch.ones(images.shape[0], 1))
-
-        # Get noise, classify it using G, then classify the output of G using D.
-        G_noise = self.compute_noise(images.shape[0], self.model.z_dim) # z
-        G_output = self.model.G(G_noise) # G(z)
+        # Get noise (denoted z), classify it using G, then classify the output of G using D.
+        noise = self.compute_noise(images.shape[0], self.model.z_dim) # (z)
+        G_output = self.model.G(noise) # G(z)
         DG_score = self.model.D(G_output) # D(G(z))
 
-        # Compute non-saturating G loss
-        G_loss = F.binary_cross_entropy(DG_score, G_labels)
+        # Compute the non-saturating loss for how D did versus the generations of G using sigmoid cross entropy
+        G_loss = -torch.mean(torch.log(DG_score + 1e-8))
 
         return G_loss
 

@@ -149,7 +149,7 @@ class AutoencoderTrainer:
 
         output = self.model(images)
 
-        recon_loss = F.binary_cross_entropy(output, images, reduction='sum')
+        recon_loss = -torch.sum(torch.log(torch.abs(output - images) + 1e-8))
 
         return recon_loss
 

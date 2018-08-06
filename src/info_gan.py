@@ -220,16 +220,12 @@ class InfoGANTrainer:
         Input:
             images: batch of images (reshaped to [batch_size, 784])
         Output:
-            D_loss: non-saturing loss for discriminator
+            D_loss: InfoGAN non-saturating loss for discriminator
             -E[log(D(x))] - E[log(1 - D(G(c, z)))]
         """
-        # Generate labels (ones indicate real images, zeros indicate generated)
-        X_labels = to_cuda(torch.ones(images.shape[0], 1))
-        G_labels = to_cuda(torch.zeros(images.shape[0], 1))
 
         # Classify the real batch images, get the loss for these
         DX_score = self.model.D(images)
-        DX_loss = F.binary_cross_entropy(DX_score, X_labels)
 
         # Sample noise z, generate output G(c, z)
         noise = self.compute_noise(images.shape[0], self.model.z_dim,
@@ -238,12 +234,11 @@ class InfoGANTrainer:
 
         # Classify the fake batch images, get the loss for these using sigmoid cross entropy
         DG_score = self.model.D(G_output)
-        DG_loss = F.binary_cross_entropy(DG_score, G_labels)
 
         # Compute vanilla (original paper) D loss
-        D_loss = DX_loss + DG_loss
+        D_loss = -torch.mean(torch.log(DX_score + 1e-8) + torch.log(1 - DG_score + 1e-8))
 
-        return D_loss
+        return torch.sum(D_loss)
 
     def train_G(self, images):
         """ Run 1 step of training for generator
@@ -254,21 +249,15 @@ class InfoGANTrainer:
             G_loss: non-saturating loss for how well G(z) fools D
             -E[log(D(G(c, z)))]
         """
-        # Generate labels for the generator batch images (all 0 as they are fake)
-        G_labels = to_cuda(torch.ones(images.shape[0], 1))
 
-        # Get noise (denoted z), classify it using G, then classify that using D.
-        noise = self.compute_noise(images.shape[0],
-                                   self.model.z_dim,
-                                   self.model.disc_dim,
-                                   self.model.cont_dim,
-                                   c=None) # c=[c1, c2], z
+        # Get noise (denoted z), classify it using G, then classify the output of G using D.
+        noise = self.compute_noise(images.shape[0], self.model.z_dim,
+                                   self.model.disc_dim, self.model.cont_dim, c=None) # c=[c1, c2], z
         G_output = self.model.G(noise) # G(c, z)
         DG_score = self.model.D(G_output) # D(G(c, z))
 
-        # Compute the non-saturating loss for how D did versus the generations
-        # of G using sigmoid cross entropy
-        G_loss = F.binary_cross_entropy(DG_score, G_labels)
+        # Compute the non-saturating loss for how D did versus the generations of G using sigmoid cross entropy
+        G_loss = -torch.mean(torch.log(DG_score + 1e-8))
 
         return G_loss
 

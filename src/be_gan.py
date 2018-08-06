@@ -200,8 +200,9 @@ class BEGANTrainer:
             self.num_epochs = epoch
 
             # Visualize generator progress
+            self.generate_images(epoch)
+
             if self.viz:
-                self.generate_images(epoch)
                 plt.show()
 
     def train_D(self, images, K):
