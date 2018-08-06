@@ -35,7 +35,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from itertools import product
-from tqdm import tqdm_notebook
+from tqdm import tqdm
 from load_data import get_data
 from utils import *
 
@@ -181,10 +181,10 @@ class fGANTrainer:
         D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
 
         # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
-        epoch_steps = int(np.ceil(len(train_iter) / (D_steps)))
+        epoch_steps = int(np.ceil(len(self.train_iter) / (D_steps)))
 
         # Begin training
-        for epoch in tqdm_notebook(range(1, num_epochs+1)):
+        for epoch in tqdm(range(1, num_epochs+1)):
             self.model.train()
             G_losses, D_losses = [], []
 
@@ -234,9 +234,8 @@ class fGANTrainer:
             self.num_epochs = epoch
 
             # Visualize generator progress
-            self.generate_images(epoch)
-
             if self.viz:
+                self.generate_images(epoch)
                 plt.show()
 
     def train_D(self, images):
@@ -255,7 +254,7 @@ class fGANTrainer:
         DX_score = self.model.D(images)
 
         # Sample noise z, generate output G(z)
-        noise = self.compute_noise(images.shape[0], model.z_dim)
+        noise = self.compute_noise(images.shape[0], self.model.z_dim)
         G_output = self.model.G(noise)
 
         # Classify the fake batch images, get the loss for these using sigmoid cross entropy

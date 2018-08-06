@@ -132,11 +132,11 @@ class BEGANTrainer:
         D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
 
         # Reduce learning rate by factor of 2 if convergence_metric stops decreasing by a threshold for last five epochs
-        G_scheduler = ReduceLROnPlateau(G_optimizer, factor=0.50, threshold=0.01, patience=5*len(train_iter))
-        D_scheduler = ReduceLROnPlateau(D_optimizer, factor=0.50, threshold=0.01, patience=5*len(train_iter))
+        G_scheduler = ReduceLROnPlateau(G_optimizer, factor=0.50, threshold=0.01, patience=5*len(self.train_iter))
+        D_scheduler = ReduceLROnPlateau(D_optimizer, factor=0.50, threshold=0.01, patience=5*len(self.train_iter))
 
         # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
-        epoch_steps = int(np.ceil(len(train_iter) / (D_steps)))
+        epoch_steps = int(np.ceil(len(self.train_iter) / (D_steps)))
 
         # Begin training
         for epoch in tqdm(range(1, num_epochs + 1)):
@@ -200,9 +200,8 @@ class BEGANTrainer:
             self.num_epochs = epoch
 
             # Visualize generator progress
-            self.generate_images(epoch)
-
             if self.viz:
+                self.generate_images(epoch)
                 plt.show()
 
     def train_D(self, images, K):

@@ -37,7 +37,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from itertools import product
-from tqdm import tqdm_notebook
+from tqdm import tqdm
 from load_data import get_data
 from utils import *
 
@@ -144,10 +144,10 @@ class InfoGANTrainer:
 
         # Approximate steps/epoch given D_steps per epoch
         # --> roughly train in the same way as if D_step (1) == G_step (1)
-        epoch_steps = int(np.ceil(len(train_iter) / (D_steps)))
+        epoch_steps = int(np.ceil(len(self.train_iter) / (D_steps)))
 
         # Begin training
-        for epoch in tqdm_notebook(range(1, num_epochs+1)):
+        for epoch in tqdm(range(1, num_epochs+1)):
             self.model.train()
             G_losses, D_losses, MI_losses = [], [], []
 
@@ -210,9 +210,8 @@ class InfoGANTrainer:
             self.num_epochs = epoch
 
             # Visualize generator progress
-            self.generate_images(epoch)
-
             if self.viz:
+                self.generate_images(epoch)
                 plt.show()
 
     def train_D(self, images):

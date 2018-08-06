@@ -107,7 +107,7 @@ class DRAGANTrainer:
         D_optimizer = ptim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
 
         # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
-        epoch_steps = int(np.ceil(len(train_iter) / (D_steps)))
+        epoch_steps = int(np.ceil(len(self.train_iter) / (D_steps)))
 
         # Begin training
         for epoch in tqdm(range(1, num_epochs+1)):
@@ -161,9 +161,8 @@ class DRAGANTrainer:
             self.num_epochs = epoch
 
             # Visualize generator progress
-            self.generate_images(epoch)
-
             if self.viz:
+                self.generate_images(epoch)
                 plt.show()
 
     def train_D(self, images, LAMBDA=10, K=1, C=1):

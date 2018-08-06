@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from itertools import product
-from tqdm import tqdm_notebook
+from tqdm import tqdm
 from load_data import get_data
 from utils import *
 
@@ -71,10 +71,11 @@ class FisherGAN(nn.Module):
     """
     def __init__(self, image_size, hidden_dim, z_dim, output_dim=1):
         super().__init__()
+
+        self.__dict__.update(locals())
+
         self.G = Generator(image_size, hidden_dim, z_dim)
         self.D = Discriminator(image_size, hidden_dim, output_dim)
-
-        self.z_dim = z_dim
 
 
 class FisherGANTrainer:
@@ -93,7 +94,7 @@ class FisherGANTrainer:
 
         self.viz = viz
 
-    def train(self, num_epochs, G_lr=1e-4, D_lr=1e-4, D_steps=1, LAMBDA=0., RHO=1e-6):
+    def train(self, num_epochs, G_lr=1e-4, D_lr=1e-4, D_steps=1, RHO=1e-6):
         """ Train FisherGAN using IPM framework
             Logs progress using G loss, D loss, G(x), D(G(x)), IPM ratio (want close to 0.50),
             Lambda (want close to 0), and visualizations of Generator output.
@@ -115,10 +116,10 @@ class FisherGANTrainer:
         D_optimizer = torch.optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
 
         # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
-        epoch_steps = int(np.ceil(len(train_iter) / (D_steps)))
+        epoch_steps = int(np.ceil(len(self.train_iter) / (D_steps)))
 
         # Begin training
-        for epoch in tqdm_notebook(range(1, num_epochs+1)):
+        for epoch in tqdm(range(1, num_epochs+1)):
             self.model.train()
             G_losses, D_losses = [], []
 
@@ -175,9 +176,8 @@ class FisherGANTrainer:
             self.num_epochs = epoch
 
             # Visualize generator progress
-            self.generate_images(epoch)
-
             if self.viz:
+                self.generate_images(epoch)
                 plt.show()
 
     def train_D(self, images):
@@ -196,7 +196,7 @@ class FisherGANTrainer:
         DX_score = self.model.D(images)
 
         # Sample noise z, generate output G(z), discriminate D(G(z))
-        noise = self.compute_noise(images.shape[0], model.z_dim)
+        noise = self.compute_noise(images.shape[0], self.model.z_dim)
         G_output = self.model.G(noise)
         DG_score = self.model.D(G_output)
 
