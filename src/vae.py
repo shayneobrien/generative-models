@@ -38,8 +38,8 @@ from copy import deepcopy
 
 from tqdm import tqdm
 from itertools import product
-from load_data import get_data
-from utils import *
+
+from .utils import *
 
 
 class Encoder(nn.Module):
@@ -98,7 +98,7 @@ class VAE(nn.Module):
         return z
 
 
-class Trainer:
+class VAETrainer:
     def __init__(self, model, train_iter, val_iter, test_iter, viz=False):
         """ Object to hold data iterators, train the model """
         self.model = to_cuda(model)
@@ -108,7 +108,7 @@ class Trainer:
         self.val_iter = val_iter
         self.test_iter = test_iter
 
-        self.debugging_image, _ = next(iter(val_iter))
+        self.debugging_image, _ = next(iter(test_iter))
         self.viz = viz
 
     def train(self, num_epochs, lr=1e-3, weight_decay=1e-5):
@@ -175,7 +175,10 @@ class Trainer:
 
         output, mu, log_var = self.model(images)
 
-        recon_loss = -torch.sum(torch.log(torch.abs(output - images) + 1e-8))
+        # Recon loss (binary cross entropy)
+        recon_loss = -torch.sum(images*torch.log(output + 1e-8)
+                                + (1-images) * torch.log(1 - output + 1e-8))
+
         kl_diverge = self.kl_divergence(mu, log_var)
 
         return recon_loss, kl_diverge
@@ -232,13 +235,6 @@ class Trainer:
         state = torch.load(loadpath)
         self.model.load_state_dict(state)
 
-
-# OPTIONAL: Visualization / latent-space sampling methods
-class Viz:
-    """ Visualize and sample latent space """
-    def __init__(self, model=None):
-        self.model = model
-
     def sample_images(self, num_images=64):
         """ Viz method 1: generate images by sampling z ~ p(z), x ~ p(x|z,θ) """
         # Sample from latent space randomly, visualize output
@@ -263,21 +259,22 @@ class Viz:
             sample = self.model.decoder(z)
             display(to_img(make_grid(sample.data.view(28, 28).unsqueeze(0))))
 
-    def means_scatterplot(self, num_epochs=3):
+    def explore_latent_space(self, num_epochs=3):
         """ Viz method 3: train a VAE with 2 latent variables, compare variational means """
 
         # Initialize and train a VAE with size two dimension latent space
-        model = VAE(image_size=784, hidden_dim=400, z_dim=2)
-        trainer = VAETrainer(model, train_iter, val_iter, test_iter)
-        trainer.train(num_epochs)
-        model = trainer.best_model
+        train_iter, val_iter, test_iter = get_data()
+        latent_model = VAE(image_size=784, hidden_dim=400, z_dim=2)
+        latent_space = VAETrainer(latent_model, train_iter, val_iter, test_iter)
+        latent_space.train(num_epochs)
+        latent_model = latent_space.best_model
 
         # Across batches in train iter, collect variationa means
         data = []
         for batch in train_iter:
             images, labels = batch
             images = to_cuda(images.view(images.shape[0], -1))
-            mu, log_var = model.encoder(images)
+            mu, log_var = latent_model.encoder(images)
 
             for label, (m1, m2) in zip(labels, mu):
                 data.append((label.item(), m1.item(), m2.item()))
@@ -287,18 +284,16 @@ class Viz:
         plt.figure(figsize=(10,10))
         plt.scatter(m1s, m2s, c=labels)
         plt.legend([str(i) for i in set(labels)])
-        return model
 
-    def explore_latent_space(self):
-        """ Viz method 4: explore the latent space representations """
-
-        # Evenly sample acorss latent space, visualize the outputs
+        # Evenly sample across latent space, visualize the outputs
         mu = torch.stack([torch.FloatTensor([m1, m2])
                           for m1 in np.linspace(-2, 2, 10)
                           for m2 in np.linspace(-2, 2, 10)])
-        samples = self.model.decoder(to_cuda(mu))
+        samples = latent_model.decoder(to_cuda(mu))
         to_img = ToPILImage()
         display(to_img(make_grid(samples.data.view(-1, 1, 28, 28), nrow=10)))
+
+        return latent_model
 
     def make_all(self):
         """ Execute all viz methods outlined in this class """
@@ -309,11 +304,9 @@ class Viz:
         print('Interpolating between two randomly sampled')
         self.sample_interpolated_images()
 
-        print('Visualizing latent space groupings')
-        self.model = self.means_scatterplot()
-
         print('Exploring latent representations')
-        self.explore_latent_space()
+        _ = self.explore_latent_space()
+
 
 if __name__ == "__main__":
 
@@ -326,7 +319,7 @@ if __name__ == "__main__":
                 z_dim=20)
 
     # Init trainer
-    trainer = Trainer(model=model,
+    trainer = VAETrainer(model=model,
                       train_iter=train_iter,
                       val_iter=val_iter,
                       test_iter=test_iter,

@@ -21,7 +21,9 @@ from copy import deepcopy
 
 from tqdm import tqdm
 from itertools import product
-from load_data import get_data
+
+from .utils import *
+
 
 def to_cuda(x):
     """ Cuda-erize a tensor """
@@ -81,7 +83,7 @@ class AutoencoderTrainer:
         self.val_iter = val_iter
         self.test_iter = test_iter
 
-        self.debugging_image, _ = next(iter(val_iter))
+        self.debugging_image, _ = next(iter(test_iter))
         self.viz = viz
 
     def train(self, num_epochs, lr=1e-3, weight_decay=1e-5):
@@ -105,7 +107,7 @@ class AutoencoderTrainer:
                                  weight_decay=weight_decay)
 
         # Begin training
-        for epoch in tqdm_notebook(range(1, num_epochs+1)):
+        for epoch in tqdm(range(1, num_epochs+1)):
 
             self.model.train()
             epoch_loss = []
@@ -149,7 +151,10 @@ class AutoencoderTrainer:
 
         output = self.model(images)
 
-        recon_loss = -torch.sum(torch.log(torch.abs(output - images) + 1e-8))
+        # Binary cross entropy
+        recon_loss = -torch.sum(images*torch.log(output + 1e-8)
+                                + (1-images) * torch.log(1 - output + 1e-8))
+
 
         return recon_loss
 
@@ -176,10 +181,10 @@ class AutoencoderTrainer:
 
         # Save
         if save:
-            outname = '../viz/' + trainer.name + '/'
+            outname = '../viz/' + self.name + '/'
             if not os.path.exists(outname):
                 os.makedirs(outname)
-            torchvision.utils.save_image(trainer.debugging_image.data,
+            torchvision.utils.save_image(self.debugging_image.data,
                                          outname + 'real.png',
                                          nrow=size_figure_grid)
             torchvision.utils.save_image(reconst_images.unsqueeze(1).data,
@@ -209,7 +214,7 @@ if __name__ == '__main__':
                                  train_iter=train_iter,
                                  val_iter=val_iter,
                                  test_iter=test_iter,
-                                 viz=False)
+                                 viz=True)
 
     # Train
     trainer.train(num_epochs=5,

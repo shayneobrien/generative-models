@@ -16,10 +16,10 @@ They test (forward) Kullback-Leibler, reverse Kullback-Leibler, Pearson
 chi-squared, Neyman chi-squared, squared Hellinger, Jensen-Shannon,
 and Jeffrey divergences.
 
-# TODO: fix Neyman, tweak JS
-
-We exclude Jeffrey due to poor performance and nontrivial implementation.
-(see scipy.special.lambertw otherwise)
+We exclude Neyman and Jeffrey due to poor performance and nontrivial
+implementations to yield 'convergence' (see scipy.special.lambertw
+for how to implement Jeffrey, and Table 6 of Appendix C of the paper
+for how to implement Neyman)
 
 https://arxiv.org/pdf/1606.00709.pdf
 """
@@ -36,8 +36,8 @@ import numpy as np
 
 from itertools import product
 from tqdm import tqdm
-from load_data import get_data
-from utils import *
+
+from .utils import *
 
 
 class Generator(nn.Module):
@@ -86,20 +86,20 @@ class Divergence:
     """
     def __init__(self, method):
         self.method = method.lower().strip()
-        assert self.method in ['total_vartiation',
+        assert self.method in ['total_variation',
                                'forward_kl',
                                'reverse_kl',
                                'hellinger',
                                'pearson',
-#                                'neyman', #TODO: fix neyman
                                'jensen_shannon'], \
             'Invalid divergence.'
 
     def D_loss(self, DX_score, DG_score):
         """ Compute batch loss for discriminator using f-divergence metric """
 
-        if self.method == 'total_vartiation':
-            return -(torch.mean(0.5*torch.tanh(DX_score)) - torch.mean(0.5*torch.tanh(DG_score)))
+        if self.method == 'total_variation':
+            return -(torch.mean(0.5*torch.tanh(DX_score)) \
+                        - torch.mean(0.5*torch.tanh(DG_score)))
 
         elif self.method == 'forward_kl':
             return -(torch.mean(DX_score) - torch.mean(torch.exp(DG_score-1)))
@@ -107,24 +107,21 @@ class Divergence:
         elif self.method == 'reverse_kl':
             return -(torch.mean(-torch.exp(DX_score)) - torch.mean(-1-DG_score))
 
-        elif self.method == 'hellinger':
-            return -(torch.mean(1-torch.exp(DX_score)) /
-                    - torch.mean((1-torch.exp(DG_score))/(torch.exp(DG_score))))
-
         elif self.method == 'pearson':
             return -(torch.mean(DX_score) - torch.mean(0.25*DG_score**2 + DG_score))
 
-        elif self.method == 'neyman':
-            return -(torch.mean(1-torch.exp(DX_score)) - torch.mean(2 - 2*(1-DG_score)**0.50))
+        elif self.method == 'hellinger':
+            return -(torch.mean(1-torch.exp(DX_score)) \
+                        - torch.mean((1-torch.exp(DG_score))/(torch.exp(DG_score))))
 
         elif self.method == 'jensen_shannon':
-            return -(torch.mean(torch.log(torch.tensor(2.))-torch.log(1+torch.exp(-DX_score+1e-8))) /
-                    - torch.mean(-torch.log(torch.tensor(2.)-torch.exp(DG_score)+1e-8)))
+            return -(torch.mean(torch.tensor(2.)-(1+torch.exp(-DX_score))) \
+                        - torch.mean(-(torch.tensor(2.)-torch.exp(DG_score))))
 
     def G_loss(self, DG_score):
         """ Compute batch loss for generator using f-divergence metric """
 
-        if self.method == 'total_vartiation':
+        if self.method == 'total_variation':
             return -torch.mean(0.5*torch.tanh(DG_score))
 
         elif self.method == 'forward_kl':
@@ -133,17 +130,14 @@ class Divergence:
         elif self.method == 'reverse_kl':
             return -torch.mean(-1-DG_score)
 
-        elif self.method == 'hellinger':
-            return -torch.mean((1-torch.exp(DG_score))/(torch.exp(DG_score)))
-
         elif self.method == 'pearson':
             return -torch.mean(0.25*DG_score**2 + DG_score)
 
-        elif self.method == 'neyman':
-            return -torch.mean(2 - 2*(1-DG_score)**0.50)
+        elif self.method == 'hellinger':
+            return -torch.mean((1-torch.exp(DG_score))/(torch.exp(DG_score)))
 
         elif self.method == 'jensen_shannon':
-            return -torch.mean(-torch.log(torch.tensor(2.)-torch.exp(DG_score)+1e-8))
+            return -torch.mean(-(torch.tensor(2.)-torch.exp(DG_score)))
 
 
 class fGANTrainer:
@@ -162,13 +156,13 @@ class fGANTrainer:
 
         self.viz = viz
 
-    def train(self, num_epochs, method='forward_kl', G_lr=1e-4, D_lr=1e-4, D_steps=1):
+    def train(self, num_epochs, method, G_lr=1e-4, D_lr=1e-4, D_steps=1):
         """ Train a vanilla GAN using the non-saturating gradients loss for the generator.
             Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            method: str, divergence metric to optimize (default 'forward_kl')
+            method: str, divergence metric to optimize
             G_lr: float, learning rate for generator's Adam optimizer (default 1e-4)
             D_lr: float, learning rate for discriminator's Adam optimizer (default 1e-4)
             D_steps: int, training step ratio for how often to train D compared to G (default 1)
@@ -372,7 +366,7 @@ if __name__ == '__main__':
                           viz=False)
     # Train
     trainer.train(num_epochs=25,
-                  method='forward_kl',
+                  method='jensen_shannon',
                   G_lr=1e-4,
                   D_lr=1e-4,
                   D_steps=1)

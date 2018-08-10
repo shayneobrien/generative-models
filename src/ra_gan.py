@@ -34,8 +34,8 @@ import numpy as np
 
 from itertools import product
 from tqdm import tqdm
-from load_data import get_data
-from utils import *
+
+from .utils import *
 
 
 class Generator(nn.Module):
@@ -177,9 +177,9 @@ class RaNSGANTrainer:
         """
         # Classify the real batch images, get the loss for these
         DX_score = self.model.D(images)
-        
+
         # Sample noise z, generate output G(z)
-        noise = self.compute_noise(images.shape[0], model.z_dim)
+        noise = self.compute_noise(images.shape[0], self.model.z_dim)
         G_output = self.model.G(noise)
 
         # Classify the fake batch images, get the loss for these using sigmoid cross entropy
@@ -280,6 +280,7 @@ class RaNSGANTrainer:
         """ Load state dictionary into model """
         state = torch.load(loadpath)
         self.model.load_state_dict(state)
+
 
 if __name__ == '__main__':
     # Load in binarized MNIST data, separate into data loaders
