@@ -110,11 +110,13 @@ class WGANTrainer:
         G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
         D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
 
-        # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
+        # Approximate steps/epoch given D_steps per epoch
+        # --> roughly train in the same way as if D_step (1) == G_step (1)
         epoch_steps = int(np.ceil(len(self.train_iter) / (D_steps)))
 
         # Begin training
         for epoch in tqdm(range(1, num_epochs+1)):
+            
             self.model.train()
             G_losses, D_losses = [], []
 

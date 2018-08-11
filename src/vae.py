@@ -152,6 +152,7 @@ class VAETrainer:
                 epoch_kl.append(kl_diverge.item())
 
             # Test the model on the validation set
+            self.model.eval()
             val_loss = self.evaluate(self.val_iter)
 
             # Early stopping
@@ -170,15 +171,19 @@ class VAETrainer:
 
     def compute_batch(self, batch):
         """ Compute loss for a batch of examples """
+
+        # Reshape images
         images, _ = batch
         images = to_cuda(images.view(images.shape[0], -1))
 
+        # Get output images, mean, std of encoded space
         output, mu, log_var = self.model(images)
 
         # Recon loss (binary cross entropy)
         recon_loss = -torch.sum(images*torch.log(output + 1e-8)
                                 + (1-images) * torch.log(1 - output + 1e-8))
 
+        # Kullback-Leibler divergence between encoded space, Gaussian
         kl_diverge = self.kl_divergence(mu, log_var)
 
         return recon_loss, kl_diverge

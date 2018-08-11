@@ -125,7 +125,8 @@ class InfoGANTrainer:
 
     def train(self, num_epochs, G_lr=2e-4, D_lr=2e-4, D_steps=1):
         """ Train InfoGAN using the non-saturating setup from vanilla GAN.
-            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
+            Logs progress using G loss, D loss, G(x), D(G(x)),
+            visualizations of Generator output.
 
         Inputs:
             num_epochs: int, number of epochs to train for
@@ -148,6 +149,7 @@ class InfoGANTrainer:
 
         # Begin training
         for epoch in tqdm(range(1, num_epochs+1)):
+
             self.model.train()
             G_losses, D_losses, MI_losses = [], [], []
 
@@ -246,7 +248,7 @@ class InfoGANTrainer:
         Input:
             images: batch of images reshaped to [batch_size, -1]
         Output:
-            G_loss: non-saturating loss for how well G(z) fools D
+            G_loss: InfoGAN non-saturating loss for generator
             -E[log(D(G(c, z)))]
         """
 

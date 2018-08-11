@@ -3,14 +3,8 @@ Boundary Equilibrium GAN
 
 https://arxiv.org/pdf/1703.10717.pdf
 
-Matching the distributions of the reconstruction losses is a solid approximation
-to matching the generated and real data distributions. While this is the idea of
-BEGAN, it is crucial to note that the reconstruction losses are NOT what we are
-trying to minimize. Instead, we derive the real loss from the Wasserstein
-distance between these reconstruction losses.
-
 BEGAN uses an autoencoder as a discriminator and optimizes a lower bound of the
-Wasserstein distance between auto-encoder loss distributions on realand fake
+Wasserstein distance between auto-encoder loss distributions on real and fake
 data (as opposed to the sample distributions of the generator and real data).
 
 During training:
@@ -119,9 +113,9 @@ class BEGANTrainer:
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            G_lr: float, learning rate for generator's Adam optimizer (default 1e-4)
-            D_lr: float, learning rate for discriminator's Adam optimizer (default 1e-4)
-            D_steps: int, training step ratio for how often to train D compared to G (default 1)
+            G_lr: float, learning rate for generator's optimizer (default 1e-4)
+            D_lr: float, learning rate for discriminator's optimizer (default 1e-4)
+            D_steps: int, ratio for how often to train D compared to G (default 1)
             GAMMA: float, balance equilibrium between G and D objectives (default 0.50)
             LAMBDA: float, weight D loss for updating K (default 1e-3)
             K: float, how much to initially emphasize loss(D(G(z))) in total D loss (default 0.00)
@@ -135,11 +129,13 @@ class BEGANTrainer:
         G_scheduler = ReduceLROnPlateau(G_optimizer, factor=0.50, threshold=0.01, patience=5*len(self.train_iter))
         D_scheduler = ReduceLROnPlateau(D_optimizer, factor=0.50, threshold=0.01, patience=5*len(self.train_iter))
 
-        # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
+        # Approximate steps/epoch given D_steps per epoch
+        # --> roughly train in the same way as if D_step (1) == G_step (1)
         epoch_steps = int(np.ceil(len(self.train_iter) / (D_steps)))
 
         # Begin training
         for epoch in tqdm(range(1, num_epochs + 1)):
+
             self.model.train()
             G_losses, D_losses = [], []
 
@@ -166,7 +162,7 @@ class BEGANTrainer:
                     # Save relevant output for progress logging
                     D_step_loss.append(D_loss.item())
 
-                # We report D_loss in this way so that G_loss and D_loss have the same number of entries
+                # So that G_loss and D_loss have the same number of entries
                 D_losses.append(np.mean(D_step_loss))
 
                 # TRAINING G: Zero out gradients for G.
@@ -191,18 +187,19 @@ class BEGANTrainer:
                 D_scheduler.step(convergence_measure)
                 G_scheduler.step(convergence_measure)
 
+            # Save losses
             self.Glosses.extend(G_losses)
             self.Dlosses.extend(D_losses)
 
             # Progress logging
             print ("Epoch[%d/%d], G Loss: %.4f, D Loss: %.4f, K: %.4f, Convergence Measure: %.4f"
-                   %(epoch, num_epochs, np.mean(G_losses), np.mean(D_losses), K, convergence_measure))
+                   %(epoch, num_epochs, np.mean(G_losses),
+                     np.mean(D_losses), K, convergence_measure))
             self.num_epochs = epoch
 
             # Visualize generator progress
-            self.generate_images(epoch)
-
             if self.viz:
+                self.generate_images(epoch)
                 plt.show()
 
     def train_D(self, images, K):
@@ -217,7 +214,7 @@ class BEGANTrainer:
 
         # Reconstruct the images using D (autoencoder), get reconstruction loss
         DX_reconst = self.model.D(images)
-        DX_loss = torch.mean(torch.sum(torch.abs(DX_reconst - images), dim=1)) # ||DX_loss||1 == DX_loss
+        DX_loss = torch.mean(torch.sum(torch.abs(DX_reconst - images), dim=1))
 
         # Sample outputs from the generator
         noise = self.compute_noise(images.shape[0], self.model.z_dim)
@@ -225,7 +222,7 @@ class BEGANTrainer:
 
         # Reconstruct the generation using D (autoencoder)
         DG_reconst = self.model.D(G_output)
-        DG_loss = torch.mean(torch.sum(torch.abs(DG_reconst - G_output), dim=1)) # ||DG_loss||1 == DG_loss
+        DG_loss = torch.mean(torch.sum(torch.abs(DG_reconst - G_output), dim=1))
 
         # Put it all together
         D_loss = DX_loss - (K * DG_loss)
@@ -247,7 +244,7 @@ class BEGANTrainer:
         DG_reconst = self.model.D(G_output) # D(G(z))
 
         # Reconstruct the generation using D
-        G_loss = torch.mean(torch.sum(torch.abs(DG_reconst - G_output), dim=1)) # ||G_loss||1 == G_loss
+        G_loss = torch.mean(torch.sum(torch.abs(DG_reconst - G_output), dim=1))
 
         return G_loss
 
@@ -263,6 +260,7 @@ class BEGANTrainer:
 
     def generate_images(self, epoch, num_outputs=36, save=True):
         """ Visualize progress of generator learning """
+
         # Turn off any regularization
         self.model.eval()
 
@@ -296,6 +294,7 @@ class BEGANTrainer:
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
+
         # Set style, figure size
         plt.style.use('ggplot')
         plt.rcParams["figure.figsize"] = (8,6)

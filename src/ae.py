@@ -1,9 +1,10 @@
-""" (Autoencoder)
+""" (AE)
 Standard Autoencoder
 
 Autoencoders take an input representation, encode it into a reduced
-dimensionality space using an 'encoder network', and then decode it using a
-'decoder network' back to its original representation
+dimensionality space using an 'encoder network.' They then decode this
+encoded representation by using a 'decoder network,' which transforms it
+back to its original representation.
 """
 
 import torch, torchvision
@@ -23,13 +24,6 @@ from tqdm import tqdm
 from itertools import product
 
 from .utils import *
-
-
-def to_cuda(x):
-    """ Cuda-erize a tensor """
-    if torch.cuda.is_available():
-        x = x.cuda()
-    return x
 
 
 class Encoder(nn.Module):
@@ -117,25 +111,26 @@ class AutoencoderTrainer:
                 # Zero out gradients
                 optimizer.zero_grad()
 
-                # Compute batch reconstruction loss, Kullback-Leibler divergence
+                # Compute reconstruction loss (binary cross entropy)
                 batch_loss = self.compute_batch(batch)
 
                 # Update parameters
                 batch_loss.backward()
                 optimizer.step()
 
-                # Log metrics
+                # Log progress metrics
                 epoch_loss.append(batch_loss.item())
 
-            # Test the model on the validation set
+            # Evaluate the model on the validation set
+            self.model.eval()
             val_loss = self.evaluate(self.val_iter)
 
-            # Early stopping
+            # Early stopping based on validation loss
             if val_loss < best_val_loss:
                 self.best_model = deepcopy(self.model)
                 best_val_loss = val_loss
 
-            # Progress logging
+            # Print progress
             print ("Epoch[%d/%d], Train Loss: %.4f, Val Loss: %.4f"
                    %(epoch, num_epochs, np.mean(epoch_loss), val_loss))
 
@@ -146,15 +141,17 @@ class AutoencoderTrainer:
 
     def compute_batch(self, batch):
         """ Compute loss for a batch of examples """
+
+        # Process a batch, reshape from an image to a 2D tensor and send to GPU
         images, _ = batch
         images = to_cuda(images.view(images.shape[0], -1))
 
+        # Encode the image and then decode the representation
         output = self.model(images)
 
-        # Binary cross entropy
+        # Binary cross entropy loss
         recon_loss = -torch.sum(images*torch.log(output + 1e-8)
                                 + (1-images) * torch.log(1 - output + 1e-8))
-
 
         return recon_loss
 
@@ -164,12 +161,12 @@ class AutoencoderTrainer:
 
     def reconstruct_images(self, images, epoch, save=True):
         """Reconstruct a fixed input at each epoch for progress visualization"""
-        # Reshape images, VAE output
+        # Reshape images, pass through model, reshape reconstructed output
         images = to_cuda(images.view(images.shape[0], -1))
         reconst_images = self.model(images)
         reconst_images = reconst_images.view(reconst_images.shape[0], 28, 28)
 
-        # Plot
+        # Plot the reconstructed image
         plt.close()
         size_figure_grid = int(reconst_images.shape[0]**0.5)
         fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5,5))
@@ -202,6 +199,7 @@ class AutoencoderTrainer:
 
 
 if __name__ == '__main__':
+
     # Load in binzarized MNIST data, separate into data loaders
     train_iter, val_iter, test_iter = get_data()
 
@@ -214,7 +212,7 @@ if __name__ == '__main__':
                                  train_iter=train_iter,
                                  val_iter=val_iter,
                                  test_iter=test_iter,
-                                 viz=True)
+                                 viz=False)
 
     # Train
     trainer.train(num_epochs=5,

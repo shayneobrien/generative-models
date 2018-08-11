@@ -124,8 +124,7 @@ class LSGANTrainer:
                     # TRAINING D: Zero out gradients for D
                     D_optimizer.zero_grad()
 
-                    # Train the discriminator to approximate the least-squares distance between real, generated
-                    # distributions
+                    # Train D to approximate the distance between real, generated
                     D_loss = self.train_D(images)
 
                     # Update parameters
@@ -135,7 +134,7 @@ class LSGANTrainer:
                     # Log results, backpropagate the discriminator network
                     D_step_loss.append(D_loss.item())
 
-                # We report D_loss in this way so that G_loss and D_loss have the same number of entries.
+                # So that G_loss and D_loss have the same number of entries.
                 D_losses.append(np.mean(D_step_loss))
 
                 # TRAINING G: Zero out gradients for G
@@ -218,6 +217,7 @@ class LSGANTrainer:
 
     def generate_images(self, epoch, num_outputs=36, save=True):
         """ Visualize progress of generator learning """
+
         # Turn off any regularization
         self.model.eval()
 

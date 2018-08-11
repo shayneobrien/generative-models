@@ -1,5 +1,7 @@
 """ (RaGAN)
-This implementation uses non-saturating (NS) GAN as a case study.
+This implementation uses non-saturating (NS) GAN as a case study. The actual
+modification proposed herein can be applied to any GAN in which the output of
+the discriminator can be interpretted as a probability.
 
 Relativistic GANs argue that the GAN generator should decrease the
 discriminator's output probability that real data is real in addition to
@@ -95,7 +97,7 @@ class RaNSGANTrainer:
         self.viz = viz
 
     def train(self, num_epochs, G_lr=2e-4, D_lr=2e-4, D_steps=1):
-        """ Train a vanilla GAN using the non-saturating gradients loss for the generator.
+        """ Train a relativistic non-saturating GAN
             Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
 
         Inputs:
@@ -108,7 +110,8 @@ class RaNSGANTrainer:
         G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
         D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
 
-        # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
+        # Approximate steps/epoch given D_steps per epoch
+        # --> roughly train in the same way as if D_step (1) == G_step (1)
         epoch_steps = int(np.ceil(len(self.train_iter) / (D_steps)))
 
         # Begin training

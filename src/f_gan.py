@@ -157,7 +157,7 @@ class fGANTrainer:
         self.viz = viz
 
     def train(self, num_epochs, method, G_lr=1e-4, D_lr=1e-4, D_steps=1):
-        """ Train a vanilla GAN using the non-saturating gradients loss for the generator.
+        """ Train a standard vanilla GAN architecture using f-divergence as loss
             Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
 
         Inputs:
@@ -174,11 +174,13 @@ class fGANTrainer:
         G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
         D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
 
-        # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
+        # Approximate steps/epoch given D_steps per epoch
+        # --> roughly train in the same way as if D_step (1) == G_step (1)
         epoch_steps = int(np.ceil(len(self.train_iter) / (D_steps)))
 
         # Begin training
         for epoch in tqdm(range(1, num_epochs+1)):
+
             self.model.train()
             G_losses, D_losses = [], []
 
@@ -194,7 +196,7 @@ class fGANTrainer:
                     # TRAINING D: Zero out gradients for D
                     D_optimizer.zero_grad()
 
-                    # Train the discriminator to learn to discriminate between real and generated images
+                    # Train D to discriminate between real and generated images
                     D_loss = self.train_D(images)
 
                     # Update parameters
@@ -210,7 +212,7 @@ class fGANTrainer:
                 # TRAINING G: Zero out gradients for G
                 G_optimizer.zero_grad()
 
-                # Train the generator to generate images that fool the discriminator
+                # Train G to generate images that fool the discriminator
                 G_loss = self.train_G(images)
 
                 # Log results, update parameters
@@ -238,11 +240,8 @@ class fGANTrainer:
         Input:
             images: batch of images (reshaped to [batch_size, 784])
         Output:
-            D_loss: non-saturing loss for discriminator,
+            D_loss: f-divergence for difference between generated, true distributiones
         """
-        # Generate labels (ones indicate real images, zeros indicate generated)
-        X_labels = to_cuda(torch.ones(images.shape[0], 1))
-        G_labels = to_cuda(torch.zeros(images.shape[0], 1))
 
         # Classify the real batch images, get the loss for these
         DX_score = self.model.D(images)
@@ -265,10 +264,8 @@ class fGANTrainer:
         Input:
             images: batch of images reshaped to [batch_size, -1]
         Output:
-            G_loss: non-saturating loss for how well G(z) fools D,
+            G_loss: f-divergence for difference between generated, true distributiones
         """
-        # Generate labels for the generator batch images (all 0, since they are fake)
-        G_labels = to_cuda(torch.ones(images.shape[0], 1))
 
         # Get noise (denoted z), classify it using G, then classify the output of G using D.
         noise = self.compute_noise(images.shape[0], self.model.z_dim) # z
@@ -325,6 +322,7 @@ class fGANTrainer:
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
+
         # Set style, figure size
         plt.style.use('ggplot')
         plt.rcParams["figure.figsize"] = (8,6)

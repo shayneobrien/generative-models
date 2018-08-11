@@ -115,11 +115,13 @@ class FisherGANTrainer:
         G_optimizer = torch.optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
         D_optimizer = torch.optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
 
-        # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
+        # Approximate steps/epoch given D_steps per epoch
+        # --> roughly train in the same way as if D_step (1) == G_step (1)
         epoch_steps = int(np.ceil(len(self.train_iter) / (D_steps)))
 
         # Begin training
         for epoch in tqdm(range(1, num_epochs+1)):
+
             self.model.train()
             G_losses, D_losses = [], []
 
@@ -135,7 +137,7 @@ class FisherGANTrainer:
                     # TRAINING D: Zero out gradients for D
                     D_optimizer.zero_grad()
 
-                    # Train the discriminator to learn to discriminate between real and generated images
+                    # Train D to learn to discriminate between real and generated images
                     D_loss, IPM_ratio = self.train_D(images)
 
                     # Update parameters
@@ -186,7 +188,7 @@ class FisherGANTrainer:
         Input:
             images: batch of images (reshaped to [batch_size, 784])
         Output:
-            D_loss: FisherGAN IPM loss
+            D_loss: FisherGAN IPM loss (Equation 9 of paper)
         """
         # Generate labels (ones indicate real images, zeros indicate generated)
         X_labels = to_cuda(torch.ones(images.shape[0], 1))
@@ -222,7 +224,7 @@ class FisherGANTrainer:
         Input:
             images: batch of images reshaped to [batch_size, -1]
         Output:
-            G_loss: FisherGAN IPM loss
+            G_loss: FisherGAN IPM loss (Equation 9 of paper)
         """
 
         # Get noise (denoted z), classify it using G, then classify the output of G using D.
@@ -247,6 +249,7 @@ class FisherGANTrainer:
 
     def generate_images(self, epoch, num_outputs=36, save=True):
         """ Visualize progress of generator learning """
+
         # Turn off any regularization
         self.model.eval()
 

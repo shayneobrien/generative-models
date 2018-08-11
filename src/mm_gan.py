@@ -109,11 +109,12 @@ class MMGANTrainer:
         G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
         D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
 
-        # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
+        # Approximate steps/epoch given D_steps per epoch
+        # --> roughly train in the same way as if D_step (1) == G_step (1)
         epoch_steps = int(np.ceil(len(self.train_iter) / (D_steps)))
 
-        # Let G train for a few steps before beginning to jointly train G and D because MM GANs have trouble learning
-        # very early on in training
+        # Let G train for a few steps before beginning to jointly train G
+        # and D because MM GANs have trouble learning very early on in training
         if G_init > 0:
             for _ in range(G_init):
                 # Process a batch of images
@@ -122,7 +123,7 @@ class MMGANTrainer:
                 # Zero out gradients for G
                 G_optimizer.zero_grad()
 
-                # Train the generator using predictions from D on the noise compared to true image labels
+                # Pre-train G
                 G_loss = self.train_G(images)
 
                 # Backpropagate the generator network
@@ -150,7 +151,7 @@ class MMGANTrainer:
                     # TRAINING D: Zero out gradients for D
                     D_optimizer.zero_grad()
 
-                    # Train the discriminator to learn to discriminate between real and generated images
+                    # Train D to learn to discriminate between real and generated images
                     D_loss = self.train_D(images)
 
                     # Update parameters
@@ -166,7 +167,7 @@ class MMGANTrainer:
                 # TRAINING G: Zero out gradients for G
                 G_optimizer.zero_grad()
 
-                # Train the generator to generate images that fool the discriminator
+                # Train G to generate images that fool the discriminator
                 G_loss = self.train_G(images)
 
                 # Log results, update parameters
@@ -197,6 +198,7 @@ class MMGANTrainer:
             D_loss: non-saturing loss for discriminator,
             -E[log(D(x))] - E[log(1 - D(G(z)))]
         """
+
         # Classify the real batch images, get the loss for these
         DX_score = self.model.D(images)
 
@@ -221,8 +223,6 @@ class MMGANTrainer:
             G_loss: minimax loss for how well G(z) fools D,
             -E[log(D(G(z)))]
         """
-        # Generate labels for the generator batch images (all 0, since they are fake)
-        G_labels = to_cuda(torch.ones(images.shape[0], 1))
 
         # Get noise (denoted z), classify it using G, then classify the output of G using D.
         noise = self.compute_noise(images.shape[0], self.model.z_dim) # z
@@ -246,6 +246,7 @@ class MMGANTrainer:
 
     def generate_images(self, epoch, num_outputs=36, save=True):
         """ Visualize progress of generator learning """
+
         # Turn off any regularization
         self.model.eval()
 
