@@ -228,7 +228,7 @@ class LSGANTrainer:
         images = self.model.G(noise)
 
         # Reshape to proper image size
-        images = images.view(images.shape[0], 28, 28)
+        images = images.view(images.shape[0], 28, 28, -1).squeeze()
 
         # Plot
         plt.close()
