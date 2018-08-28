@@ -207,13 +207,13 @@ class VAETrainer:
 
         # Plot
         plt.close()
-        size_figure_grid = int(reconst_images.shape[0]**0.5)
+        size_figure_grid, k = int(reconst_images.shape[0]**0.5), 0
         fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
         for i, j in product(range(size_figure_grid), range(size_figure_grid)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
-            ax[i,j].cla()
-            ax[i,j].imshow(reconst_images[i+j].data.numpy(), cmap='gray')
+            ax[i,j].imshow(images[k].data.numpy(), cmap='gray')
+            k += 1
 
         # Save
         if save:
