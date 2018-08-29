@@ -22,6 +22,7 @@ more than one population of crabs studied. This would've been a latent variable,
 did not know.
 
 """
+# TODO: fix all of the shape issues
 
 import torch, torchvision
 import torch.nn as nn
@@ -47,7 +48,7 @@ class Encoder(nn.Module):
     outputs is the mean and std of the latent representation z pre-reparametrization
     """
     def __init__(self, image_size, hidden_dim, z_dim):
-        super(Encoder, self).__init__()
+        super().__init__()
 
         self.linear = nn.Linear(image_size, hidden_dim)
         self.mu = nn.Linear(hidden_dim, z_dim)
@@ -63,7 +64,7 @@ class Decoder(nn.Module):
     """ MLP decoder for VAE. Input is a reparametrized latent representation,
     output is reconstructed image """
     def __init__(self, z_dim, hidden_dim, image_size):
-        super(Decoder, self).__init__()
+        super().__init__()
 
         self.linear = nn.Linear(z_dim, hidden_dim)
         self.recon = nn.Linear(hidden_dim, image_size)
@@ -78,12 +79,12 @@ class VAE(nn.Module):
     """ VAE super class to reconstruct an image. Contains reparametrization method
     """
     def __init__(self, image_size=784, hidden_dim=400, z_dim=20):
-        super(VAE, self).__init__()
+        super().__init__()
 
-        self.__dict__.update(locals())
+        self.__dict__.update(locals())å
 
-        self.encoder = Encoder(image_size = image_size, hidden_dim = hidden_dim, z_dim = z_dim)
-        self.decoder = Decoder(z_dim = z_dim, hidden_dim = hidden_dim, image_size = image_size)
+        self.encoder = Encoder(image_size=image_size, hidden_dim=hidden_dim, z_dim=z_dim)
+        self.decoder = Decoder(z_dim=z_dim, hidden_dim=hidden_dim, image_size=image_size)
 
     def forward(self, x):
         mu, log_var = self.encoder(x)
@@ -110,6 +111,7 @@ class VAETrainer:
 
         self.debugging_image, _ = next(iter(test_iter))
         self.viz = viz
+        self.best_val_loss = 1e10
 
     def train(self, num_epochs, lr=1e-3, weight_decay=1e-5):
         """ Train a Variational Autoencoder
@@ -120,9 +122,6 @@ class VAETrainer:
             lr: float, learning rate for Adam optimizer (default 1e-3)
             weight_decay: float, weight decay for Adam optimizer (default 1e-5)
         """
-
-        # Initialize best validation loss for early stopping
-        best_val_loss = 1e10
 
         # Adam optimizer, sigmoid cross entropy for reconstructing binary MNIST
         optimizer = optim.Adam(params=[p for p in self.model.parameters() if p.requires_grad], lr=lr, weight_decay=weight_decay)
@@ -201,9 +200,10 @@ class VAETrainer:
 
     def reconstruct_images(self, images, epoch, save=True):
         """Reconstruct a fixed input at each epoch for progress visualization """
-        images = to_cuda(images.view(images.shape[0], -1))
-        reconst_images, _, _ = self.model(images)
-        reconst_images = reconst_images.view(reconst_images.shape[0], 28, 28, -1).squeeze()
+        # Reshape images, pass through model, reshape reconstructed output
+        batch = to_cuda(images.view(images.shape[0], -1))
+        reconst_images, _, _ = self.model(batch)
+        reconst_images = reconst_images.view(images.shape)
 
         # Plot
         plt.close()

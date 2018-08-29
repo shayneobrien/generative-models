@@ -31,7 +31,7 @@ class Encoder(nn.Module):
     vector representation of that image.
     """
     def __init__(self, image_size, hidden_dim):
-        super(Encoder, self).__init__()
+        super().__init__()
 
         self.linear = nn.Linear(image_size, hidden_dim)
 
@@ -44,7 +44,7 @@ class Decoder(nn.Module):
     output is reconstructed image.
     """
     def __init__(self, hidden_dim, image_size):
-        super(Decoder, self).__init__()
+        super().__init__()
 
         self.linear = nn.Linear(hidden_dim, image_size)
 
@@ -162,9 +162,9 @@ class AutoencoderTrainer:
     def reconstruct_images(self, images, epoch, save=True):
         """Reconstruct a fixed input at each epoch for progress visualization"""
         # Reshape images, pass through model, reshape reconstructed output
-        images = to_cuda(images.view(images.shape[0], -1))
-        reconst_images = self.model(images)
-        reconst_images = reconst_images.view(reconst_images.shape[0], 28, 28, -1).squeeze()
+        batch = to_cuda(images.view(images.shape[0], -1))
+        reconst_images = self.model(batch)
+        reconst_images = reconst_images.view(images.shape)
 
         # Plot
         plt.close()
