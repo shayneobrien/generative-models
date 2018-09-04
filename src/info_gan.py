@@ -87,6 +87,7 @@ class Q(nn.Module):
         self.inference = nn.Linear(hidden_dim, disc_dim+cont_dim)
 
     def forward(self, x):
+        #TODO: can reduce this
         activated = F.relu(self.linear(x))
         inferred = self.inference(activated)
         discrete, continuous = inferred[:, :self.disc_dim], inferred[:, self.disc_dim:]

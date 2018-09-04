@@ -77,6 +77,7 @@ class AutoencoderTrainer:
         self.val_iter = val_iter
         self.test_iter = test_iter
 
+        self.best_val_loss = 1e10
         self.debugging_image, _ = next(iter(test_iter))
         self.viz = viz
 
@@ -90,9 +91,6 @@ class AutoencoderTrainer:
             lr: float, learning rate for Adam optimizer (default 1e-3)
             weight_decay: float, weight decay for Adam optimizer (default 1e-5)
         """
-
-        # Initialize best validation loss for early stopping
-        best_val_loss = 1e10
 
         # Adam optimizer, sigmoid cross entropy for reconstructing binary MNIST
         optimizer = optim.Adam(params=[p for p in self.model.parameters()
@@ -126,9 +124,9 @@ class AutoencoderTrainer:
             val_loss = self.evaluate(self.val_iter)
 
             # Early stopping based on validation loss
-            if val_loss < best_val_loss:
+            if val_loss < self.best_val_loss:
                 self.best_model = deepcopy(self.model)
-                best_val_loss = val_loss
+                self.best_val_loss = val_loss
 
             # Print progress
             print ("Epoch[%d/%d], Train Loss: %.4f, Val Loss: %.4f"
@@ -150,6 +148,7 @@ class AutoencoderTrainer:
         output = self.model(images)
 
         # Binary cross entropy loss
+        # TODO: non-MNIST loss
         recon_loss = -torch.sum(images*torch.log(output + 1e-8)
                                 + (1-images) * torch.log(1 - output + 1e-8))
 

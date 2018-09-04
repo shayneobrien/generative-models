@@ -109,9 +109,9 @@ class VAETrainer:
         self.val_iter = val_iter
         self.test_iter = test_iter
 
+        self.best_val_loss = 1e10
         self.debugging_image, _ = next(iter(test_iter))
         self.viz = viz
-        self.best_val_loss = 1e10
 
     def train(self, num_epochs, lr=1e-3, weight_decay=1e-5):
         """ Train a Variational Autoencoder
@@ -155,9 +155,9 @@ class VAETrainer:
             val_loss = self.evaluate(self.val_iter)
 
             # Early stopping
-            if val_loss < best_val_loss:
+            if val_loss < self.best_val_loss:
                 self.best_model = deepcopy(self.model)
-                best_val_loss = val_loss
+                self.best_val_loss = val_loss
 
             # Progress logging
             print ("Epoch[%d/%d], Total Loss: %.4f, Reconst Loss: %.4f, KL Div: %.7f, Val Loss: %.4f"
@@ -179,6 +179,7 @@ class VAETrainer:
         output, mu, log_var = self.model(images)
 
         # Recon loss (binary cross entropy)
+        # TODO: non-MNIST loss
         recon_loss = -torch.sum(images*torch.log(output + 1e-8)
                                 + (1-images) * torch.log(1 - output + 1e-8))
 
