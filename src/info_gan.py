@@ -87,7 +87,6 @@ class Q(nn.Module):
         self.inference = nn.Linear(hidden_dim, disc_dim+cont_dim)
 
     def forward(self, x):
-        #TODO: can reduce this
         activated = F.relu(self.linear(x))
         inferred = self.inference(activated)
         discrete, continuous = inferred[:, :self.disc_dim], inferred[:, self.disc_dim:]
@@ -271,8 +270,8 @@ class InfoGANTrainer:
             images: batch of images reshaped to [batch_size, -1]
         Output:
             MI_loss: Approximation of mutual information
-            λI(c, G(c, z)) where I is the mutual information between our prior and
-            the GAN distribution
+            λI(c, G(c, z)) where I is the approximated mutual information
+            between our prior and the GAN distribution
         """
         # Generate labels for the generator batch images (all 0, since they are fake)
         G_labels = to_cuda(torch.zeros(images.shape[0], 1))
