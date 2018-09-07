@@ -197,7 +197,7 @@ class DRAGANTrainer:
 
         # Generate images from the noise, ensure unit
         G_interpolation = to_var(delta*images.data + (1-delta) *
-                                 (images.data + C*images.data.std() * torch.rand(images.size())))
+                                 (images.data + C*images.data.std() * to_cuda(torch.rand(images.size()))))
 
         # Discriminate generator interpolation
         D_interpolation = self.model.D(G_interpolation)

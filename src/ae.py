@@ -163,7 +163,7 @@ class AutoencoderTrainer:
         # Reshape images, pass through model, reshape reconstructed output
         batch = to_cuda(images.view(images.shape[0], -1))
         reconst_images = self.model(batch)
-        reconst_images = reconst_images.view(images.shape)
+        reconst_images = reconst_images.view(images.shape).squeeze()
 
         # Plot
         plt.close()

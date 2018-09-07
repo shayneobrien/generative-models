@@ -55,7 +55,7 @@ class Encoder(nn.Module):
         self.log_var = nn.Linear(hidden_dim, z_dim)
 
     def forward(self, x):
-        activated = F.relu(self.linear(x)) #leaky relu?
+        activated = F.relu(self.linear(x))
         mu, log_var = self.mu(activated), self.log_var(activated)
         return mu, log_var
 
@@ -94,7 +94,7 @@ class VAE(nn.Module):
 
     def reparameterize(self, mu, log_var):
         """" Reparametrization trick: z = mean + std*epsilon, where epsilon ~ N(0, 1)."""
-        epsilon = to_cuda(torch.randn(mu.size(0), mu.size(1)))
+        epsilon = to_cuda(torch.randn(mu.shape))
         z = mu + epsilon * torch.exp(log_var/2)    # 2 for convert var to std
         return z
 
@@ -204,7 +204,7 @@ class VAETrainer:
         # Reshape images, pass through model, reshape reconstructed output
         batch = to_cuda(images.view(images.shape[0], -1))
         reconst_images, _, _ = self.model(batch)
-        reconst_images = reconst_images.view(images.shape)
+        reconst_images = reconst_images.view(images.shape).squeeze()
 
         # Plot
         plt.close()
@@ -213,7 +213,7 @@ class VAETrainer:
         for i, j in product(range(size_figure_grid), range(size_figure_grid)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
-            ax[i,j].imshow(images[k].data.numpy(), cmap='gray')
+            ax[i,j].imshow(reconst_images[k].data.numpy(), cmap='gray')
             k += 1
 
         # Save
