@@ -104,6 +104,7 @@ class BEGANTrainer:
         self.Dlosses = []
 
         self.viz = viz
+        self.num_epochs = 0
 
     def train(self, num_epochs, G_lr=1e-4, D_lr=1e-4, D_steps=1,
                     GAMMA=0.50, LAMBDA=1e-3, K=0.00):
@@ -195,7 +196,7 @@ class BEGANTrainer:
             print ("Epoch[%d/%d], G Loss: %.4f, D Loss: %.4f, K: %.4f, Convergence Measure: %.4f"
                    %(epoch, num_epochs, np.mean(G_losses),
                      np.mean(D_losses), K, convergence_measure))
-            self.num_epochs = epoch
+            self.num_epochs += 1
 
             # Visualize generator progress
             if self.viz:
@@ -275,13 +276,13 @@ class BEGANTrainer:
 
         # Plot
         plt.close()
-        size_figure_grid, k = int(num_outputs**0.5), 0
+        size_figure_grid = int(num_outputs**0.5)
         fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
         for i, j in product(range(size_figure_grid), range(size_figure_grid)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
-            ax[i,j].imshow(images[k].data.numpy(), cmap='gray')
-            k += 1
+            ax[i,j].cla()
+            ax[i,j].imshow(images[i+j].data.numpy(), cmap='gray')
 
         # Save images if desired
         if save:
@@ -290,7 +291,7 @@ class BEGANTrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png'
-                                         %(epoch), nrow = 5)
+                                         %(epoch), nrow=size_figure_grid)
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
@@ -325,8 +326,8 @@ if __name__ == '__main__':
 
     # Init model
     model = BEGAN(image_size=784,
-                  hidden_dim=256,
-                  z_dim=128)
+                  hidden_dim=400,
+                  z_dim=20)
 
     # Init trainer
     trainer = BEGANTrainer(model=model,

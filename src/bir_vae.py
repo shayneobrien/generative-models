@@ -112,6 +112,10 @@ class BIRVAETrainer:
         self.debugging_image, _ = next(iter(test_iter))
         self.viz = viz
 
+        self.mmd_loss = []
+        self.recon_loss = []
+        self.num_epochs = 0
+
     def train(self, num_epochs, lr=1e-3, weight_decay=1e-5):
         """ Train a Variational Autoencoder
             Logs progress using total loss, reconstruction loss, maximum mean
@@ -152,6 +156,10 @@ class BIRVAETrainer:
                 epoch_recon.append(mse_loss.item())
                 epoch_mmd.append(mmd_loss.item())
 
+            # Save progress
+            self.mmd_loss.extend(epoch_mmd)
+            self.recon_loss.extend(epoch_recon)
+
             # Test the model on the validation set
             self.model.eval()
             val_loss = self.evaluate(self.val_iter)
@@ -191,7 +199,7 @@ class BIRVAETrainer:
 
         return mse_loss, mmd_loss
 
-    def maximum_mean_discrepancy(self, z, STD=1):
+    def maximum_mean_discrepancy(self, z):
         """ Maximum mean discrepancy of a Gaussian kernel """
         x = torch.randn(z.shape)
         x_kernel = self.compute_kernel(x, x)
@@ -230,6 +238,7 @@ class BIRVAETrainer:
 
     def reconstruct_images(self, images, epoch, save=True):
         """Reconstruct a fixed input at each epoch for progress visualization """
+
         # Reshape images, pass through model, reshape reconstructed output
         batch = to_cuda(images.view(images.shape[0], -1))
         reconst_images, _ = self.model(batch)
@@ -257,15 +266,29 @@ class BIRVAETrainer:
                                          outname + 'reconst_%d.png' %(epoch),
                                          nrow=size_figure_grid)
 
-    def sample_images(self, num_images=64):
+    def sample_images(self, epoch=-100, num_images=36, save=True):
         """ Viz method 1: generate images by sampling z ~ p(z), x ~ p(x|z,θ) """
-
         # Sample from latent space randomly, visualize output
-        sample = to_cuda(torch.randn(num_images, self.model.decoder.linear.in_features))
-        sample = self.model.decoder(sample)
+        size = self.model.decoder.linear.in_features ** 0.5
+
+        # Sample z
+        z = to_cuda(torch.randn(num_images, self.model.decoder.linear.in_features))
+
+        # Pass into decoder
+        sample = self.model.decoder(z)
+
+        # Plot
         to_img = ToPILImage()
-        img = to_img(make_grid(sample.data.view(num_images, 1, 28, 28)))
+        img = to_img(make_grid(sample.data.view(num_images, 1, 28, 28),
+                     nrow=int(num_images**0.5)))
         display(img)
+
+        # Save
+        if save:
+            outname = '../viz/' + self.name + '/'
+            if not os.path.exists(outname):
+                os.makedirs(outname)
+            img.save(outname + 'sample_%d.png' %(epoch))
 
     def sample_interpolated_images(self):
         """ Viz method 2: sample two random latent vectors from p(z),
@@ -330,6 +353,25 @@ class BIRVAETrainer:
         print('Exploring latent representations...')
         _ = self.explore_latent_space()
 
+    def viz_loss(self):
+        """ Visualize reconstruction loss """
+        # Set style, figure size
+        plt.style.use('ggplot')
+        plt.rcParams["figure.figsize"] = (8,6)
+
+        # Plot reconstruction loss in red, KL divergence in green
+        plt.plot(np.linspace(1, self.num_epochs, len(self.recon_loss)),
+                 self.recon_loss,
+                 'r')
+        plt.plot(np.linspace(1, self.num_epochs, len(self.mmd_loss)),
+                 self.mmd_loss,
+                 'g')
+
+        # Add legend, title
+        plt.legend(['Reconstruction', 'Maximum Mean Discrepancy'])
+        plt.title(self.name)
+        plt.show()
+
     def save_model(self, savepath):
         """ Save model state dictionary """
         torch.save(self.model.state_dict(), savepath)
@@ -338,7 +380,6 @@ class BIRVAETrainer:
         """ Load state dictionary into model. If model not specified, instantiate it """
         state = torch.load(loadpath)
         self.model.load_state_dict(state)
-
 
 
 if __name__ == "__main__":

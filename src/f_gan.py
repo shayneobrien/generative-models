@@ -89,8 +89,8 @@ class Divergence:
         assert self.method in ['total_variation',
                                'forward_kl',
                                'reverse_kl',
-                               'hellinger',
                                'pearson',
+                               'hellinger',
                                'jensen_shannon'], \
             'Invalid divergence.'
 
@@ -155,6 +155,7 @@ class fGANTrainer:
         self.Dlosses = []
 
         self.viz = viz
+        self.num_epochs = 0
 
     def train(self, num_epochs, method, G_lr=1e-4, D_lr=1e-4, D_steps=1):
         """ Train a standard vanilla GAN architecture using f-divergence as loss
@@ -164,10 +165,10 @@ class fGANTrainer:
             num_epochs: int, number of epochs to train for
             method: str, divergence metric to optimize
             G_lr: float, learning rate for generator's Adam optimizer (default 1e-4)
-            D_lr: float, learning rate for discriminator's Adam optimizer (default 1e-4)
+            D_lr: float, learning rate for discriminsator's Adam optimizer (default 1e-4)
             D_steps: int, training step ratio for how often to train D compared to G (default 1)
         """
-        # Initialize loss
+        # Initialize loss, indicate which GAN it is
         self.loss_fnc = Divergence(method)
 
         # Initialize optimizers
@@ -227,7 +228,7 @@ class fGANTrainer:
             # Progress logging
             print ("Epoch[%d/%d], G Loss: %.4f, D Loss: %.4f"
                    %(epoch, num_epochs, np.mean(G_losses), np.mean(D_losses)))
-            self.num_epochs = epoch
+            self.num_epochs += 1
 
             # Visualize generator progress
             if self.viz:
@@ -313,12 +314,12 @@ class fGANTrainer:
 
         # Save images if desired
         if save:
-            outname = '../viz/' + self.name + '/'
+            outname = '../viz/' + self.name + '/' + self.loss_fnc.method + '/'
             if not os.path.exists(outname):
                 os.makedirs(outname)
             torchvision.utils.save_image(images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png'
-                                         %(epoch), nrow = 5)
+                                         %(epoch), nrow=size_figure_grid)
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
@@ -333,7 +334,7 @@ class fGANTrainer:
 
         # Add legend, title
         plt.legend(['Discriminator', 'Generator'])
-        plt.title(self.name)
+        plt.title(self.name + ' : ' + self.loss_fnc.method)
         plt.show()
 
     def save_model(self, savepath):
@@ -353,8 +354,8 @@ if __name__ == '__main__':
 
     # Init model
     model = fGAN(image_size=784,
-                 hidden_dim=256,
-                 z_dim=128)
+                 hidden_dim=400,
+                 z_dim=20)
 
     # Init trainer
     trainer = fGANTrainer(model=model,

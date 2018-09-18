@@ -91,6 +91,7 @@ class DRAGANTrainer:
         self.Dlosses = []
 
         self.viz = viz
+        self.num_epochs = 0
 
     def train(self, num_epochs, G_lr=1e-4, D_lr=1e-4, D_steps=5):
         """ Train a Deep Regret Analytic GAN
@@ -104,7 +105,7 @@ class DRAGANTrainer:
         """
         # Initialize optimizers
         G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
-        D_optimizer = ptim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
+        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
 
         # Approximate steps/epoch given D_steps per epoch
         # --> roughly train in the same way as if D_step (1) == G_step (1)
@@ -160,7 +161,7 @@ class DRAGANTrainer:
             # Progress logging
             print ("Epoch[%d/%d], G Loss: %.4f, D Loss: %.4f"
                    %(epoch, num_epochs, np.mean(G_losses), np.mean(D_losses)))
-            self.num_epochs = epoch
+            self.num_epochs += 1
 
             # Visualize generator progress
             if self.viz:
@@ -311,8 +312,8 @@ if __name__ == "__main__":
 
     # Init model
     model = DRAGAN(image_size=784,
-                   hidden_dim=256,
-                   z_dim=128)
+                   hidden_dim=400,
+                   z_dim=20)
 
     # Init trainer
     trainer = DRAGANTrainer(model=model,

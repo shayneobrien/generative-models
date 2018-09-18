@@ -93,6 +93,7 @@ class MMGANTrainer:
         self.Dlosses = []
 
         self.viz = viz
+        self.num_epochs = 0
 
     def train(self, num_epochs, G_lr=2e-4, D_lr=2e-4, D_steps=1, G_init=5):
         """ Train a vanilla GAN using the minimax gradients loss for the generator.
@@ -182,7 +183,7 @@ class MMGANTrainer:
             # Progress logging
             print ("Epoch[%d/%d], G Loss: %.4f, D Loss: %.4f"
                    %(epoch, num_epochs, np.mean(G_losses), np.mean(D_losses)))
-            self.num_epochs = epoch
+            self.num_epochs += 1
 
             # Visualize generator progress
             if self.viz:
@@ -276,7 +277,7 @@ class MMGANTrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png'
-                                         %(epoch), nrow = 5)
+                                         %(epoch), nrow=size_figure_grid)
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
@@ -310,8 +311,8 @@ if __name__ == "__main__":
 
     # Init model
     model = MMGAN(image_size=784,
-                  hidden_dim=256,
-                  z_dim=128)
+                  hidden_dim=400,
+                  z_dim=20)
 
     # Init trainer
     trainer = MMGANTrainer(model=model,

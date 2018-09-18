@@ -81,6 +81,9 @@ class AutoencoderTrainer:
         self.debugging_image, _ = next(iter(test_iter))
         self.viz = viz
 
+        self.recon_loss = []
+        self.num_epochs = 0
+
     def train(self, num_epochs, lr=1e-3, weight_decay=1e-5):
         """ Train a Variational Autoencoder
             Logs progress using total loss, reconstruction loss, kl_divergence,
@@ -119,6 +122,9 @@ class AutoencoderTrainer:
                 # Log progress metrics
                 epoch_loss.append(batch_loss.item())
 
+            # Save progress
+            self.recon_loss.extend(epoch_loss)
+
             # Evaluate the model on the validation set
             self.model.eval()
             val_loss = self.evaluate(self.val_iter)
@@ -131,6 +137,7 @@ class AutoencoderTrainer:
             # Print progress
             print ("Epoch[%d/%d], Train Loss: %.4f, Val Loss: %.4f"
                    %(epoch, num_epochs, np.mean(epoch_loss), val_loss))
+            self.num_epochs += 1
 
             # Debugging and visualization purposes
             if self.viz:
@@ -186,6 +193,22 @@ class AutoencoderTrainer:
             torchvision.utils.save_image(reconst_images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png' %(epoch),
                                          nrow=size_figure_grid)
+
+    def viz_loss(self):
+        """ Visualize reconstruction loss """
+        # Set style, figure size
+        plt.style.use('ggplot')
+        plt.rcParams["figure.figsize"] = (8,6)
+
+        # Plot reconstruction loss in red
+        plt.plot(np.linspace(1, self.num_epochs, len(self.recon_loss)),
+                 self.recon_loss,
+                 'r')
+
+        # Add legend, title
+        plt.legend(['Reconstruction loss'])
+        plt.title(self.name)
+        plt.show()
 
     def save_model(self, savepath):
         """ Save model state dictionary """

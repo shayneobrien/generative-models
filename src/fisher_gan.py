@@ -93,6 +93,7 @@ class FisherGANTrainer:
         self.Dlosses = []
 
         self.viz = viz
+        self.num_epochs = 0
 
     def train(self, num_epochs, G_lr=1e-4, D_lr=1e-4, D_steps=1, RHO=1e-6):
         """ Train FisherGAN using IPM framework
@@ -175,7 +176,7 @@ class FisherGANTrainer:
             print ("Epoch[%d/%d], G Loss: %.4f, D Loss: %.4f, IPM ratio: %.4f, Lambda: %.4f"
                    %(epoch, num_epochs, np.mean(G_losses), np.mean(D_losses),
                      IPM_ratio, self.LAMBDA))
-            self.num_epochs = epoch
+            self.num_epochs += 1
 
             # Visualize generator progress
             if self.viz:
@@ -279,7 +280,7 @@ class FisherGANTrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png'
-                                         %(epoch), nrow = 5)
+                                         %(epoch), nrow=size_figure_grid)
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
@@ -312,8 +313,8 @@ if __name__ == '__main__':
 
     # Init model
     model = FisherGAN(image_size=784,
-                      hidden_dim=256,
-                      z_dim=128)
+                      hidden_dim=400,
+                      z_dim=20)
     # Init trainer
     trainer = FisherGANTrainer(model=model,
                                train_iter=train_iter,

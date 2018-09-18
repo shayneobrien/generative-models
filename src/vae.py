@@ -113,6 +113,10 @@ class VAETrainer:
         self.debugging_image, _ = next(iter(test_iter))
         self.viz = viz
 
+        self.kl_loss = []
+        self.recon_loss = []
+        self.num_epochs = 0
+
     def train(self, num_epochs, lr=1e-3, weight_decay=1e-5):
         """ Train a Variational Autoencoder
             Logs progress using total loss, reconstruction loss, kl_divergence, and validation loss
@@ -150,6 +154,10 @@ class VAETrainer:
                 epoch_recon.append(recon_loss.item())
                 epoch_kl.append(kl_diverge.item())
 
+            # Save progress
+            self.kl_loss.extend(epoch_kl)
+            self.recon_loss.extend(epoch_recon)
+
             # Test the model on the validation set
             self.model.eval()
             val_loss = self.evaluate(self.val_iter)
@@ -162,10 +170,11 @@ class VAETrainer:
             # Progress logging
             print ("Epoch[%d/%d], Total Loss: %.4f, Reconst Loss: %.4f, KL Div: %.7f, Val Loss: %.4f"
                    %(epoch, num_epochs, np.mean(epoch_loss), np.mean(epoch_recon), np.mean(epoch_kl), val_loss))
+            self.num_epochs += 1
 
             # Debugging and visualization purposes
             if self.viz:
-                self.reconstruct_images(self.debugging_image, epoch)
+                self.sample_images(epoch)
                 plt.show()
 
     def compute_batch(self, batch):
@@ -188,6 +197,10 @@ class VAETrainer:
 
         return recon_loss, kl_diverge
 
+    def kl_divergence(self, mu, log_var):
+        """ Compute Kullback-Leibler divergence """
+        return torch.sum(0.5 * (mu**2 + torch.exp(log_var) - log_var - 1))
+
     def evaluate(self, iterator):
         """ Evaluate on a given dataset """
         loss = []
@@ -200,7 +213,8 @@ class VAETrainer:
         return loss
 
     def reconstruct_images(self, images, epoch, save=True):
-        """Reconstruct a fixed input at each epoch for progress visualization """
+        """ Sample images from latent space at each epoch """
+
         # Reshape images, pass through model, reshape reconstructed output
         batch = to_cuda(images.view(images.shape[0], -1))
         reconst_images, _, _ = self.model(batch)
@@ -228,27 +242,29 @@ class VAETrainer:
                                          outname + 'reconst_%d.png' %(epoch),
                                          nrow=size_figure_grid)
 
-    def kl_divergence(self, mu, log_var):
-        """ Compute Kullback-Leibler divergence """
-        return torch.sum(0.5 * (mu**2 + torch.exp(log_var) - log_var - 1))
-
-    def save_model(self, savepath):
-        """ Save model state dictionary """
-        torch.save(self.model.state_dict(), savepath)
-
-    def load_model(self, loadpath):
-        """ Load state dictionary into model. If model not specified, instantiate it """
-        state = torch.load(loadpath)
-        self.model.load_state_dict(state)
-
-    def sample_images(self, num_images=64):
+    def sample_images(self, epoch=-100, num_images=36, save=True):
         """ Viz method 1: generate images by sampling z ~ p(z), x ~ p(x|z,θ) """
         # Sample from latent space randomly, visualize output
-        sample = to_cuda(torch.randn(num_images, self.model.decoder.linear.in_features))
-        sample = self.model.decoder(sample)
+        size = self.model.decoder.linear.in_features ** 0.5
+
+        # Sample z
+        z = to_cuda(torch.randn(num_images, self.model.decoder.linear.in_features))
+
+        # Pass into decoder
+        sample = self.model.decoder(z)
+
+        # Plot
         to_img = ToPILImage()
-        img = to_img(make_grid(sample.data.view(num_images, 1, 28, 28)))
+        img = to_img(make_grid(sample.data.view(num_images, 1, 28, 28),
+                     nrow=int(num_images**0.5)))
         display(img)
+
+        # Save
+        if save:
+            outname = '../viz/' + self.name + '/'
+            if not os.path.exists(outname):
+                os.makedirs(outname)
+            img.save(outname + 'sample_%d.png' %(epoch))
 
     def sample_interpolated_images(self):
         """ Viz method 2: sample two random latent vectors from p(z),
@@ -305,7 +321,7 @@ class VAETrainer:
         """ Execute all viz methods outlined in this class """
 
         print('Sampled images from latent space:')
-        self.sample_images()
+        self.sample_images(save=False)
 
         print('Interpolating between two randomly sampled')
         self.sample_interpolated_images()
@@ -313,6 +329,33 @@ class VAETrainer:
         print('Exploring latent representations')
         _ = self.explore_latent_space()
 
+    def viz_loss(self):
+        """ Visualize reconstruction loss """
+        # Set style, figure size
+        plt.style.use('ggplot')
+        plt.rcParams["figure.figsize"] = (8,6)
+
+        # Plot reconstruction loss in red, KL divergence in green
+        plt.plot(np.linspace(1, self.num_epochs, len(self.recon_loss)),
+                 self.recon_loss,
+                 'r')
+        plt.plot(np.linspace(1, self.num_epochs, len(self.kl_loss)),
+                 self.kl_loss,
+                 'g')
+
+        # Add legend, title
+        plt.legend(['Reconstruction', 'Kullback-Leibler'])
+        plt.title(self.name)
+        plt.show()
+
+    def save_model(self, savepath):
+        """ Save model state dictionary """
+        torch.save(self.model.state_dict(), savepath)
+
+    def load_model(self, loadpath):
+        """ Load state dictionary into model. If model not specified, instantiate it """
+        state = torch.load(loadpath)
+        self.model.load_state_dict(state)
 
 if __name__ == "__main__":
 
