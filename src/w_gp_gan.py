@@ -1,7 +1,7 @@
 """ (WGANGP)
 Wasserstein GAN with Gradient Penalties ('improved methods for WGAN training')
 
-https://arxiv.org/pdf/1704.00028.pdf
+https://arxiv.org/abs/1704.00028
 
 The output of WGANGP's D is unbounded unless passed through an activation function. In this implementation,
 we include a sigmoid activation function as this empirically improves visualizations for binary MNIST.

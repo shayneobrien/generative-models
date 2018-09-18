@@ -9,6 +9,8 @@ allows for stable and time efficient training that does not
 compromise the capacity of the critic, and does not need data
 independent constraints such as weight clipping."
 
+https://arxiv.org/abs/1606.07536
+
 Integral Probability Metrics (IPM) framework simply means that
 the outputs of the discriminator can be interpretted
 probabilistically. This is similar to WGAN/WGAN-GP. Whereas
@@ -19,8 +21,6 @@ between distributions.
 
 The main empirical claims are that FisherGAN yields better
 inception scores and has less computational overhead than WGAN.
-
-https://arxiv.org/pdf/1606.07536.pdf
 """
 
 import torch, torchvision

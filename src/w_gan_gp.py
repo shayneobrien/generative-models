@@ -1,20 +1,16 @@
-""" (DRAGAN)
-Deep Regret Analytic GAN
+""" (WGANGP)
+Wasserstein GAN with Gradient Penalties ('improved methods for WGAN training')
 
-https://arxiv.org/abs/1705.07215.pdf
+https://arxiv.org/pdf/1704.00028.pdf
 
-The output of DRAGAN's D can be interpretted as a probability, similarly to MMGAN
-and NSGAN.
+The output of WGANGP's D is unbounded unless passed through an activation function. In this implementation,
+we include a sigmoid activation function as this empirically improves visualizations for binary MNIST.
 
-Proposes to study GANs from a regret minimization perspective. This implementation is
-very similar to WGAN GP, in that it is applying a gradient penalty to try and get at
-an improved training objective based on how D and G would optimally perform. They apply
-the gradient penalty only close to the real data manifold (whereas WGAN GP picks the
-gradient location on a random line between a real and randomly generated fake sample).
-For further details, see Section 2.5 of the paper.
-
-DRAGAN is very similar to WGANGP, but seems much less stable. I would spend more time on
-WGANGP than DRAGAN.
+WGAN GP roposes a gradient penalty to add to the WGAN discriminator loss as an alternative method for enforcing
+the Lipschitz constraint (previously done via weight clipping). This penalty does not suffer from the biasing
+of the discriminator toward simple funtions due to weight clipping. Additionally, the reformulation of the
+discriminator by adding a gradient penaltyterm makes batch normalization not necessary. This is notable because
+batch normalization implicitly changes the discriminator's problem from mapping one-to-one to many-to-many.
 """
 
 import torch, torchvision
@@ -50,7 +46,7 @@ class Generator(nn.Module):
 
 class Discriminator(nn.Module):
     """ Critic (not trained to classify). Input is an image (real or generated),
-    output is the approximate Wasserstein Distance between z~P(G(z)) and real.
+    output is the approximate least-squares distance between z~P(G(z)) and real.
     """
     def __init__(self, image_size, hidden_dim, output_dim):
         super().__init__()
@@ -60,11 +56,11 @@ class Discriminator(nn.Module):
 
     def forward(self, x):
         activated = F.relu(self.linear(x))
-        discrimination = torch.sigmoid(self.discriminate(activated))
+        discrimination = F.relu(self.discriminate(activated))
         return discrimination
 
 
-class DRAGAN(nn.Module):
+class WGANGP(nn.Module):
     """ Super class to contain both Discriminator (D) and Generator (G)
     """
     def __init__(self, image_size, hidden_dim, z_dim, output_dim=1):
@@ -76,7 +72,7 @@ class DRAGAN(nn.Module):
         self.D = Discriminator(image_size, hidden_dim, output_dim)
 
 
-class DRAGANTrainer:
+class WGANGPTrainer:
     """ Object to hold data iterators, train a GAN variant
     """
     def __init__(self, model, train_iter, val_iter, test_iter, viz=False):
@@ -94,7 +90,7 @@ class DRAGANTrainer:
         self.num_epochs = 0
 
     def train(self, num_epochs, G_lr=1e-4, D_lr=1e-4, D_steps=5):
-        """ Train a Deep Regret Analytic GAN
+        """ Train a WGAN GP
             Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
 
         Inputs:
@@ -168,54 +164,49 @@ class DRAGANTrainer:
                 self.generate_images(epoch)
                 plt.show()
 
-    def train_D(self, images, LAMBDA=10, K=1, C=1):
+    def train_D(self, images, LAMBDA=10):
         """ Run 1 step of training for discriminator
 
         Input:
-            model: model instantiation
             images: batch of images (reshaped to [batch_size, 784])
         Output:
-            D_loss: DRAGAN loss for discriminator,
-            -E[log(D(x))] - E[log(1 - D(G(z)))] + λE[(||∇ D(G(z))|| - 1)^2]
+            D_loss: Wasserstein loss for discriminator,
+            -E[D(x)] + E[D(G(z))] + λE[(||∇ D(εx + (1 − εG(z)))|| - 1)^2]
         """
 
-        # Classify the real batch images, get the loss for these
-        DX_score = self.model.D(images)
-
-        # Sample noise z, generate output G(z)
+        # ORIGINAL CRITIC STEPS:
+        # Sample noise, an output from the generator
         noise = self.compute_noise(images.shape[0], self.model.z_dim)
         G_output = self.model.G(noise)
 
-        # Classify the fake batch images, get the loss for these using sigmoid cross entropy
-        DG_score = self.model.D(G_output)
+        # Use the discriminator to sample real, generated images
+        DX_score = self.model.D(images) # D(z)
+        DG_score = self.model.D(G_output) # D(G(z))
 
-        # Compute vanilla (original paper) D loss
-        D_loss = -torch.mean(torch.log(DX_score + 1e-8) + torch.log(1 - DG_score + 1e-8))
-
-        # GRADIENT PENALTY STEPS:
+        # GRADIENT PENALTY:
         # Uniformly sample along one straight line per each batch entry.
-        delta = to_cuda(torch.rand(images.shape[0], 1).expand(images.size()))
+        epsilon = to_var(torch.rand(images.shape[0], 1).expand(images.size()))
 
-        # Generate images from the noise, ensure unit
-        G_interpolation = to_var(delta*images.data + (1-delta) *
-                                 (images.data + C*images.data.std() * to_cuda(torch.rand(images.size()))))
-
-        # Discriminate generator interpolation
+        # Generate images from the noise, ensure unit gradient norm 1
+        # See Section 4 and Algorithm 1 of original paper for full explanation.
+        G_interpolation = epsilon*images + (1-epsilon)*G_output
         D_interpolation = self.model.D(G_interpolation)
 
         # Compute the gradients of D with respect to the noise generated input
-        gradients = torch.autograd.grad(outputs = D_interpolation,
-                                        inputs = G_interpolation,
-                                        grad_outputs = to_cuda(torch.ones(D_interpolation.size())),
-                                        only_inputs = True,
-                                        create_graph = True,
-                                        retain_graph = True)[0]
+        weight = to_cuda(torch.ones(D_interpolation.size()))
+
+        gradients = torch.autograd.grad(outputs=D_interpolation,
+                                        inputs=G_interpolation,
+                                        grad_outputs=weight,
+                                        only_inputs=True,
+                                        create_graph=True,
+                                        retain_graph=True)[0]
 
         # Full gradient penalty
-        grad_penalty = LAMBDA * torch.mean((gradients.norm(2, dim=1) - K)**2)
+        grad_penalty = LAMBDA * torch.mean((gradients.norm(2, dim=1) - 1)**2)
 
-        # Compute DRAGAN loss for D
-        D_loss = D_loss + grad_penalty
+        # Compute WGAN-GP loss for D
+        D_loss = torch.mean(DG_score) - torch.mean(DX_score) + grad_penalty
 
         return D_loss
 
@@ -223,17 +214,18 @@ class DRAGANTrainer:
         """ Run 1 step of training for generator
 
         Input:
-            images: batch of images (reshaped to [batch_size, -1])
+            images: batch of images reshaped to [batch_size, -1]
         Output:
-            G_loss: DRAGAN (non-saturating) loss for G, -E[log(D(G(z)))]
+            G_loss: wasserstein loss for generator,
+            -E[D(G(z))]
         """
-        # Get noise (denoted z), classify it using G, then classify the output of G using D.
+        # Get noise, classify it using G, then classify the output of G using D.
         noise = self.compute_noise(images.shape[0], self.model.z_dim) # z
         G_output = self.model.G(noise) # G(z)
         DG_score = self.model.D(G_output) # D(G(z))
 
-        # Compute the non-saturating loss for how D did versus the generations of G using sigmoid cross entropy
-        G_loss = -torch.mean(torch.log(DG_score + 1e-8))
+        # Compute WGAN-GP loss for G (same loss as WGAN)
+        G_loss = -1 * (torch.mean(DG_score))
 
         return G_loss
 
@@ -249,7 +241,6 @@ class DRAGANTrainer:
 
     def generate_images(self, epoch, num_outputs=36, save=True):
         """ Visualize progress of generator learning """
-
         # Turn off any regularization
         self.model.eval()
 
@@ -279,7 +270,7 @@ class DRAGANTrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png'
-                                         %(epoch), nrow = 5)
+                                         %(epoch), nrow=size_figure_grid)
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
@@ -305,25 +296,25 @@ class DRAGANTrainer:
         state = torch.load(loadpath)
         self.model.load_state_dict(state)
 
-
 if __name__ == "__main__":
+
     # Load in binarized MNIST data, separate into data loaders
     train_iter, val_iter, test_iter = get_data()
 
     # Init model
-    model = DRAGAN(image_size=784,
+    model = WGANGP(image_size=784,
                    hidden_dim=400,
                    z_dim=20)
 
     # Init trainer
-    trainer = DRAGANTrainer(model=model,
+    trainer = WGANGPTrainer(model=model,
                             train_iter=train_iter,
                             val_iter=val_iter,
                             test_iter=test_iter,
                             viz=False)
 
     # Train
-    trainer.train(num_epochs=65,
+    trainer.train(num_epochs=25,
                   G_lr=1e-4,
                   D_lr=1e-4,
                   D_steps=1)

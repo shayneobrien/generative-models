@@ -12,6 +12,8 @@ from a probability distribution defined by the network weights). They
 then empirically show the effect of using different training
 divergences on a trained model's average log likelihood of sampled data.
 
+https://arxiv.org/abs/1606.00709
+
 They test (forward) Kullback-Leibler, reverse Kullback-Leibler, Pearson
 chi-squared, Neyman chi-squared, squared Hellinger, Jensen-Shannon,
 and Jeffrey divergences.
@@ -20,8 +22,6 @@ We exclude Neyman and Jeffrey due to poor performance and nontrivial
 implementations to yield 'convergence' (see scipy.special.lambertw
 for how to implement Jeffrey, and Table 6 of Appendix C of the paper
 for how to implement Neyman)
-
-https://arxiv.org/pdf/1606.00709.pdf
 """
 
 import torch, torchvision

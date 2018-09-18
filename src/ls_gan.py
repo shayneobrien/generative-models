@@ -1,7 +1,7 @@
 """ (LS GAN)
 Least Squares GAN
 
-https://arxiv.org/pdf/1611.04076.pdf
+https://arxiv.org/abs/1611.04076
 
 The output of LSGAN's D is unbounded unless passed through an activation function. In this
 implementation, we include a sigmoid activation function as this empirically improves

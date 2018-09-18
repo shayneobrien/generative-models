@@ -1,7 +1,7 @@
 """ (BEGAN)
 Boundary Equilibrium GAN
 
-https://arxiv.org/pdf/1703.10717.pdf
+https://arxiv.org/abs/1703.10717
 
 BEGAN uses an autoencoder as a discriminator and optimizes a lower bound of the
 Wasserstein distance between auto-encoder loss distributions on real and fake

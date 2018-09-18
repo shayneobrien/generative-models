@@ -10,6 +10,8 @@ surprisingly effective: it was able to discover highly semantic and meaningful
 hidden representations on a number of image datasets: digits (MNIST), faces (CelebA),
 and house numbers (SVHN). ""
 
+https://arxiv.org/abs/1606.03657
+
 The Generator input is split into two parts: a traditional "noise" vector (z)
 and a latent "code” vector (c) that targets the salient structured semantic features of
 the data distribution. These vectors are made meaningful by maximizing the mutual
@@ -21,9 +23,6 @@ compute the mutual information by sampling c from our assumed prior P(c), sampli
 noise vector z, using them both to sample  x ~ G(c, z), and then passing x to Q(c|x).
 We then use Q(c|x) to maximize the mutual information between c and G(z, c) and
 backpropagate its estimate back to both G and Q.
-
-https://arxiv.org/pdf/1606.03657.pdf
-
 """
 
 import torch, torchvision
