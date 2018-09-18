@@ -175,7 +175,7 @@ class BIRVAETrainer:
 
             # Debugging and visualization purposes
             if self.viz:
-                self.reconstruct_images(self.debugging_image, epoch)
+                self.sample_images(epoch)
                 plt.show()
 
     def compute_batch(self, batch, LAMBDA=1000.):
@@ -345,7 +345,7 @@ class BIRVAETrainer:
         """ Execute all viz methods outlined in this class """
 
         print('Sampling images from latent space...')
-        self.sample_images()
+        self.sample_images(save=False)
 
         print('Interpolating between two randomly sampled...')
         self.sample_interpolated_images()
