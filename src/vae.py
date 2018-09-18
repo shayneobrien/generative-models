@@ -40,7 +40,7 @@ from copy import deepcopy
 from tqdm import tqdm
 from itertools import product
 
-from .utils import *
+from utils import *
 
 
 class Encoder(nn.Module):
