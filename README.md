@@ -26,6 +26,17 @@ cd src
 python bir_vae.py
 ```
 
+# MAKE YOUR OWN MODEL
+One of the primary purposes of this repository is to make implementing generative model (i.e., GAN/VAE) variants as easy as possible. Thus, the core training class is structured in such a way that new implementations should only have to edit the train_D and train_G functions of GAN Trainer classes, and the compute_batch function of VAE Trainer classes. For example, suppose we have a non-saturating GAN and we wanted to implement a least-squares GAN. All we normally have to do is edit:
+
+NSGAN
+
+
+to
+
+
+LSGAN
+
 # ARCHITECTURES
 The architecture chosen in these implementations for both the generator (G) and discriminator (D) consists of a simple, two-layer feedforward network. While this will give sensible output for MNIST, in practice it is recommended to use deep convolutional architectures (i.e. DCGANs) to get nicer outputs. This can be done by editing the Generator and Discriminator classes for GANs, or the Encoder and Decoder classes for VAEs.
 

@@ -40,7 +40,7 @@ from copy import deepcopy
 from tqdm import tqdm
 from itertools import product
 
-from utils import *
+from .utils import *
 
 
 class Encoder(nn.Module):
@@ -185,12 +185,10 @@ class VAETrainer:
         images = to_cuda(images.view(images.shape[0], -1))
 
         # Get output images, mean, std of encoded space
-        output, mu, log_var = self.model(images)
+        outputs, mu, log_var = self.model(images)
 
-        # Recon loss (binary cross entropy)
-        # TODO: non-MNIST loss
-        recon_loss = -torch.sum(images*torch.log(output + 1e-8)
-                                + (1-images) * torch.log(1 - output + 1e-8))
+        # L2 (mean squared error) loss
+        recon_loss = torch.sum((images - outputs) ** 2)
 
         # Kullback-Leibler divergence between encoded space, Gaussian
         kl_diverge = self.kl_divergence(mu, log_var)
