@@ -1,4 +1,4 @@
-# OVERVIEW
+# Overview
 PyTorch version: 0.4.1 | Python 3.6.5
 
 Annotated implementations with comparative introductions for minimax, non-saturating, wasserstein, wasserstein gradient penalty, least squares, deep regret analytic, bounded equilibrium, relativistic, f-divergence, Fisher, and information generative adversarial networks (GANs), and standard, variational, and bounded information rate variational autoencoders (VAEs).
@@ -7,7 +7,7 @@ Paper links are supplied at the beginning of each file with a short summary of t
 
 All code in this repository operates in a generative, unsupervised manner on binary (black and white) MNIST. The architectures are compatible with a variety of datatypes (1D, 2D, 3D) and plotting functions work with binary/RGB images too. If a GPU is detected, the models use it. Otherwise, they default to CPU.
 
-# USAGE
+# Usage
 To initialize an environment:
 ```
 python -m venv env  
@@ -26,17 +26,17 @@ cd src
 python bir_vae.py
 ```
 
-# IMPLEMENTING NEW MODELS
-One of the primary purposes of this repository is to make implementing deep generative model (i.e., GAN/VAE) variants as easy as possible. This is possible because, typically but not always (e.g. BIRVAE), the proposed modifications only apply to the way loss is computed for backpropagation. Thus, the core training class is structured in such a way that new implementations should only have to edit the train_D and train_G functions of GAN Trainer classes, and the compute_batch function of VAE Trainer classes.
+# New Models
 
-For example, suppose we have a non-saturating GAN and we wanted to implement a least-squares GAN. All we have to change two lines:
+One of the primary purposes of this repository is to make implementing deep generative model (i.e., GAN/VAE) variants as easy as possible. This is possible because, typically but not always (e.g. BIRVAE), the proposed modifications only apply to the way loss is computed for backpropagation. Thus, the core training class is structured in such a way that most new implementations should only require edits to the ```train_D``` and ```train_G``` functions of GAN Trainer classes, and the ```compute_batch``` function of VAE Trainer classes.
 
-Original (NSGAN)
+Suppose we have a non-saturating GAN and we wanted to implement a least-squares GAN. To do this, all we have to do is change two lines:
+
+[Original](https://github.com/shayneobrien/generative-models/blob/master/src/ns_gan.py#L166-L208) (NSGAN)
 ```
-def train_D(self, ):
-  ...
-  D_loss = -torch.mean(torch.log(DX_score + 1e-8) + torch.log(1 - DG_score + 1e-8))
+def train_D(self):
 
+  D_loss = -torch.mean(torch.log(DX_score + 1e-8) + torch.log(1 - DG_score + 1e-8))
   return D_loss
 ```
 ```
@@ -47,7 +47,7 @@ def train_G(self, images):
   return G_loss
 ```
 
-New (LSGAN)
+[New](https://github.com/shayneobrien/generative-models/blob/master/src/ls_gan.py#L166-L209) (LSGAN)
 ```
 def train_D(self, images, a=0, b=1):
   ...
@@ -61,12 +61,10 @@ def train_G(self, images):
   return G_loss
 ```
 
-with the rest of the details of the Trainer class remaining the same.
-
-# ARCHITECTURES
+# Model Architecture
 The architecture chosen in these implementations for both the generator (G) and discriminator (D) consists of a simple, two-layer feedforward network. While this will give sensible output for MNIST, in practice it is recommended to use deep convolutional architectures (i.e. DCGANs) to get nicer outputs. This can be done by editing the Generator and Discriminator classes for GANs, or the Encoder and Decoder classes for VAEs.
 
-# VIZ
+# Visualization
 All models were trained for 25 epochs with hidden dimension 400, latent dimension 20. Other implementation specifics are as close to the respective original paper (linked) as possible.
 
 *Model* | *Epoch 1* | *Epoch 25* | *Progress* | *Loss*
@@ -90,6 +88,7 @@ All models were trained for 25 epochs with hidden dimension 400, latent dimensio
 [VAE](https://arxiv.org/abs/1312.6114) | <img src = 'viz/VAE/sample_1.png' height = '150px'> | <img src = 'viz/VAE/sample_25.png' height = '150px'> | <img src = 'viz/gifs/VAE_gif.gif' height = '150px'> | <img src = 'viz/losses/VAE_loss.png' height = '150px'>
 [BIRVAE](https://arxiv.org/abs/1807.07306) | <img src = 'viz/BIRVAE/sample_1.png' height = '150px'> | <img src = 'viz/BIRVAE/sample_25.png' height = '150px'> | <img src = 'viz/gifs/BIRVAE_gif.gif' height = '150px'> | <img src = 'viz/losses/BIRVAE_loss.png' height = '150px'>
 
-# TODO
+# To Do
 Models: CVAE, denoising VAE, adversarial autoencoder | Bayesian GAN, Self-attention GAN, Primal-Dual Wasserstein GAN  
 Architectures: Add DCGAN option  
+Datasets: Beyond MNIST
