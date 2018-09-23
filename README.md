@@ -26,20 +26,42 @@ cd src
 python bir_vae.py
 ```
 
-<!-- # MAKE YOUR OWN MODEL
-One of the primary purposes of this repository is to make implementing generative model (i.e., GAN/VAE) variants as easy as possible. Thus, the core training class is structured in such a way that new implementations should only have to edit the train_D and train_G functions of GAN Trainer classes, and the compute_batch function of VAE Trainer classes. For example, suppose we have a non-saturating GAN and we wanted to implement a least-squares GAN. All we normally have to do is edit:
+# IMPLEMENTING NEW MODELS
+One of the primary purposes of this repository is to make implementing deep generative model (i.e., GAN/VAE) variants as easy as possible. This is possible because, typically but not always (e.g. BIRVAE), the proposed modifications only apply to the way loss is computed for backpropagation. Thus, the core training class is structured in such a way that new implementations should only have to edit the train_D and train_G functions of GAN Trainer classes, and the compute_batch function of VAE Trainer classes.
 
-NSGAN
+For example, suppose we have a non-saturating GAN and we wanted to implement a least-squares GAN. All we have to change two lines:
 
-
-to
-
-
-LSGAN
+Original (NSGAN)
 ```
-D_loss = (0.50 * torch.mean((DX_score - b)**2)) + (0.50 * torch.mean((DG_score - a)**2))
-G_loss = 0.50 * torch.mean((DG_score - c)**2)
-``` -->
+def train_D(self, ):
+  ...
+  D_loss = -torch.mean(torch.log(DX_score + 1e-8) + torch.log(1 - DG_score + 1e-8))
+
+  return D_loss
+```
+```
+def train_G(self, images):
+  ...
+  G_loss = -torch.mean(torch.log(DG_score + 1e-8))
+
+  return G_loss
+```
+
+New (LSGAN)
+```
+def train_D(self, images, a=0, b=1):
+  ...
+  D_loss = (0.50 * torch.mean((DX_score - b)**2)) + (0.50 * torch.mean((DG_score - a)**2))
+  return D_loss
+```
+```
+def train_G(self, images):
+  ...
+  G_loss = 0.50 * torch.mean((DG_score - 1.)**2)
+  return G_loss
+```
+
+with the rest of the details of the Trainer class remaining the same.
 
 # ARCHITECTURES
 The architecture chosen in these implementations for both the generator (G) and discriminator (D) consists of a simple, two-layer feedforward network. While this will give sensible output for MNIST, in practice it is recommended to use deep convolutional architectures (i.e. DCGANs) to get nicer outputs. This can be done by editing the Generator and Discriminator classes for GANs, or the Encoder and Decoder classes for VAEs.
