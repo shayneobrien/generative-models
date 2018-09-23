@@ -173,20 +173,19 @@ class NSGANTrainer:
             -E[log(D(x))] - E[log(1 - D(G(z)))]
         """
 
-        # Classify the real batch images, get the loss for these
-        DX_score = self.model.D(images)
-
         # Sample noise z, generate output G(z)
         noise = self.compute_noise(images.shape[0], self.model.z_dim)
         G_output = self.model.G(noise)
 
-        # Classify the fake batch images, get the loss for these using sigmoid cross entropy
+        # Classify the generated and real batch images
+        DX_score = self.model.D(images)
         DG_score = self.model.D(G_output)
 
         # Compute vanilla (original paper) D loss
-        D_loss = -torch.mean(torch.log(DX_score + 1e-8) + torch.log(1 - DG_score + 1e-8))
+        D_loss = torch.sum(-torch.mean(torch.log(DX_score + 1e-8)
+                            + torch.log(1 - DG_score + 1e-8)))
 
-        return torch.sum(D_loss)
+        return D_loss
 
     def train_G(self, images):
         """ Run 1 step of training for generator

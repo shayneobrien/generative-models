@@ -211,9 +211,10 @@ class MMGANTrainer:
         DG_score = self.model.D(G_output)
 
         # Compute vanilla (original paper) D loss
-        D_loss = -torch.mean(torch.log(DX_score + 1e-8) + torch.log(1 - DG_score + 1e-8))
+        D_loss = torch.sum(-torch.mean(torch.log(DX_score + 1e-8)
+                            + torch.log(1 - DG_score + 1e-8)))
 
-        return torch.sum(D_loss)
+        return D_loss
 
     def train_G(self, images):
         """ Run 1 step of training for generator
