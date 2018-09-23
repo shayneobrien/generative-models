@@ -178,8 +178,8 @@ class NSGANTrainer:
         G_output = self.model.G(noise)
 
         # Classify the generated and real batch images
-        DX_score = self.model.D(images)
-        DG_score = self.model.D(G_output)
+        DX_score = self.model.D(images) # D(x)
+        DG_score = self.model.D(G_output) # D(G(z))
 
         # Compute vanilla (original paper) D loss
         D_loss = torch.sum(-torch.mean(torch.log(DX_score + 1e-8)

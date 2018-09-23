@@ -173,6 +173,7 @@ class LSGANTrainer:
             0.50 * E[(D(x) - a)^2] + 0.50 * E[(D(G(z)) - b)^2],
             where a and b are labels for generated (0) and real (1) data
         """
+
         # Sample noise, an output from the generator
         noise = self.compute_noise(images.shape[0], self.model.z_dim)
         G_output = self.model.G(noise)
@@ -196,12 +197,13 @@ class LSGANTrainer:
             0.50 * E[(D(G(z)) - c)^2],
             where c is the label that G wants D to believe for fake data (i.e., 1)
         """
+
         # Get noise, classify it using G, then classify the output of G using D.
         noise = self.compute_noise(images.shape[0], self.model.z_dim) # z
         G_output = self.model.G(noise) # G(z)
         DG_score = self.model.D(G_output) # D(G(z))
 
-        # Compute L2 loss for G,
+        # Compute L2 loss for G
         G_loss = 0.50 * torch.mean((DG_score - c)**2)
 
         return G_loss
