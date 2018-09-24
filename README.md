@@ -34,9 +34,10 @@ Suppose we have a non-saturating GAN and we wanted to implement a least-squares 
 
 [Original](https://github.com/shayneobrien/generative-models/blob/master/src/ns_gan.py#L166-L208) (NSGAN)
 ```
-def train_D(self):
-
+def train_D(self, images):
+  ...
   D_loss = -torch.mean(torch.log(DX_score + 1e-8) + torch.log(1 - DG_score + 1e-8))
+  
   return D_loss
 ```
 ```
@@ -49,15 +50,17 @@ def train_G(self, images):
 
 [New](https://github.com/shayneobrien/generative-models/blob/master/src/ls_gan.py#L166-L209) (LSGAN)
 ```
-def train_D(self, images, a=0, b=1):
+def train_D(self, images):
   ...
-  D_loss = (0.50 * torch.mean((DX_score - b)**2)) + (0.50 * torch.mean((DG_score - a)**2))
+  D_loss = (0.50 * torch.mean((DX_score - 1.)**2)) + (0.50 * torch.mean((DG_score - 0.)**2))
+  
   return D_loss
 ```
 ```
 def train_G(self, images):
   ...
   G_loss = 0.50 * torch.mean((DG_score - 1.)**2)
+  
   return G_loss
 ```
 
