@@ -261,7 +261,10 @@ class VAETrainer:
 
         # Plot
         to_img = ToPILImage()
-        img = to_img(make_grid(sample.data.view(num_images, -1, size, size),
+        img = to_img(make_grid(sample.data.view(num_images, 
+                                                -1, 
+                                                self.model.shape, 
+                                                self.model.shape),
                      nrow=int(num_images**0.5)))
         display(img)
 
