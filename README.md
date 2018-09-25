@@ -60,7 +60,11 @@ def train_D(self, images):
 def train_G(self, images):
   ...
   G_loss = 0.50 * torch.mean((DG_score - 1.)**2)
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> 3ee8a9bec7df140d731fc204b5fe80f851cdb428
   return G_loss
 ```
 
