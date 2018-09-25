@@ -3,9 +3,9 @@ PyTorch 0.4.1 | Python 3.6.5
 
 Annotated implementations with comparative introductions for minimax, non-saturating, wasserstein, wasserstein gradient penalty, least squares, deep regret analytic, bounded equilibrium, relativistic, f-divergence, Fisher, and information generative adversarial networks (GANs), and standard, variational, and bounded information rate variational autoencoders (VAEs).
 
-Paper links are supplied at the beginning of each file with a short summary of the paper. See src folder for files to run via terminal, or notebooks folder for Jupyter notebook visualizations via your local browser. The main file changes can be see in the ```train```, ```train_D```, and ```train_G``` of the Trainer class, although changes are not completely limited to only these two areas (e.g. Wasserstein GAN clamps weight in the train function, BEGAN gives multiple outputs from train_D, fGAN has a slight modification in viz_loss function to indicate method used in title).
+Paper links are supplied at the beginning of each file with a short summary of the paper. See src folder for files to run via terminal, or notebooks folder for Jupyter notebook visualizations via your local browser. The main file changes can be see in the [```train```](https://github.com/shayneobrien/generative-models/blob/master/src/ns_gan.py#L94-L170), [```train_D```](https://github.com/shayneobrien/generative-models/blob/master/src/ns_gan.py#L172-L194), and [```train_G```](https://github.com/shayneobrien/generative-models/blob/master/src/ns_gan.py#L196-L216) of the Trainer class, although changes are not completely limited to only these two areas (e.g. Wasserstein GAN clamps weight in the train function, BEGAN gives multiple outputs from train_D, fGAN has a slight modification in viz_loss function to indicate method used in title).
 
-All code in this repository operates in a generative, unsupervised manner on binary (black and white) MNIST. The architectures are compatible with a variety of datatypes (1D, 2D, square 3D images). Plotting functions work with binary/RGB images. If a GPU is detected, the models use it. Otherwise, they default to CPU. VAE Trainer classes contain methods to visualize latent space representations (see ```make_all``` function).
+All code in this repository operates in a generative, unsupervised manner on binary (black and white) MNIST. The architectures are compatible with a variety of datatypes (1D, 2D, square 3D images). Plotting functions work with binary/RGB images. If a GPU is detected, the models use it. Otherwise, they default to CPU. VAE Trainer classes contain methods to visualize latent space representations (see [```make_all```](https://github.com/shayneobrien/generative-models/blob/master/src/vae.py#L333-L343) function).
 
 # Usage
 To initialize an environment:
@@ -60,11 +60,7 @@ def train_D(self, images):
 def train_G(self, images):
   ...
   G_loss = 0.50 * torch.mean((DG_score - 1.)**2)
-<<<<<<< HEAD
 
-=======
-
->>>>>>> 3ee8a9bec7df140d731fc204b5fe80f851cdb428
   return G_loss
 ```
 
