@@ -1,4 +1,5 @@
-""" (f-GAN)
+""" (f-GAN) https://arxiv.org/abs/1606.00709
+f-Divergence GANs
 
 The authors empirically demonstrate that when the generative model is
 misspecified and does not contain the true distribution, the divergence
@@ -11,8 +12,6 @@ are defined as models that take a random input vector and produce a sample
 from a probability distribution defined by the network weights). They
 then empirically show the effect of using different training
 divergences on a trained model's average log likelihood of sampled data.
-
-https://arxiv.org/abs/1606.00709
 
 They test (forward) Kullback-Leibler, reverse Kullback-Leibler, Pearson
 chi-squared, Neyman chi-squared, squared Hellinger, Jensen-Shannon,
@@ -37,7 +36,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm
 
-from utils import *
+from .utils import *
 
 
 class Generator(nn.Module):
@@ -55,7 +54,8 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    """ Discriminator. Input is an image (real or generated), output is P(generated).
+    """ Discriminator. Input is an image (real or generated),
+    output is P(generated).
     """
     def __init__(self, image_size, hidden_dim, output_dim):
         super().__init__()
@@ -78,6 +78,8 @@ class fGAN(nn.Module):
 
         self.G = Generator(image_size, hidden_dim, z_dim)
         self.D = Discriminator(image_size, hidden_dim, output_dim)
+
+        self.shape = int(image_size ** 0.5)
 
 
 class Divergence:
@@ -159,21 +161,25 @@ class fGANTrainer:
 
     def train(self, num_epochs, method, G_lr=1e-4, D_lr=1e-4, D_steps=1):
         """ Train a standard vanilla GAN architecture using f-divergence as loss
-            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
+
+            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations
+            of Generator output.
 
         Inputs:
             num_epochs: int, number of epochs to train for
             method: str, divergence metric to optimize
-            G_lr: float, learning rate for generator's Adam optimizer (default 1e-4)
-            D_lr: float, learning rate for discriminsator's Adam optimizer (default 1e-4)
-            D_steps: int, training step ratio for how often to train D compared to G (default 1)
+            G_lr: float, learning rate for generator's Adam optimizer
+            D_lr: float, learning rate for discriminsator's Adam optimizer
+            D_steps: int, ratio for how often to train D compared to G
         """
         # Initialize loss, indicate which GAN it is
         self.loss_fnc = Divergence(method)
 
         # Initialize optimizers
-        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
-        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
+        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters()
+                                        if p.requires_grad], lr=G_lr)
+        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters()
+                                        if p.requires_grad], lr=D_lr)
 
         # Approximate steps/epoch given D_steps per epoch
         # --> roughly train in the same way as if D_step (1) == G_step (1)
@@ -239,11 +245,10 @@ class fGANTrainer:
         """ Run 1 step of training for discriminator
 
         Input:
-            images: batch of images (reshaped to [batch_size, 784])
+            images: batch of images (reshaped to [batch_size, -1])
         Output:
-            D_loss: f-divergence for difference between generated, true distributiones
+            D_loss: f-divergence between generated, true distributions
         """
-
         # Classify the real batch images, get the loss for these
         DX_score = self.model.D(images)
 
@@ -267,8 +272,8 @@ class fGANTrainer:
         Output:
             G_loss: f-divergence for difference between generated, true distributiones
         """
-
-        # Get noise (denoted z), classify it using G, then classify the output of G using D.
+        # Get noise (denoted z), classify it using G, then classify the output
+        # of G using D.
         noise = self.compute_noise(images.shape[0], self.model.z_dim) # z
         G_output = self.model.G(noise) # G(z)
         DG_score = self.model.D(G_output) # D(G(z))
@@ -279,11 +284,11 @@ class fGANTrainer:
         return G_loss
 
     def compute_noise(self, batch_size, z_dim):
-        """ Compute random noise for the generator to learn to make images from """
+        """ Compute random noise for input into Generator G """
         return to_cuda(torch.randn(batch_size, z_dim))
 
     def process_batch(self, iterator):
-        """ Generate a process batch to be input into the discriminator D """
+        """ Generate a process batch to be input into the Discriminator D """
         images, _ = next(iter(iterator))
         images = to_cuda(images.view(images.shape[0], -1))
         return images
@@ -300,13 +305,16 @@ class fGANTrainer:
         images = self.model.G(noise)
 
         # Reshape to proper image size
-        images = images.view(images.shape[0], 28, 28, -1).squeeze()
+        images = images.view(images.shape[0],
+                             self.model.shape,
+                             self.model.shape,
+                             -1).squeeze()
 
         # Plot
         plt.close()
-        size_figure_grid, k = int(num_outputs**0.5), 0
-        fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
-        for i, j in product(range(size_figure_grid), range(size_figure_grid)):
+        grid_size, k = int(num_outputs**0.5), 0
+        fig, ax = plt.subplots(grid_size, grid_size, figsize=(5, 5))
+        for i, j in product(range(grid_size), range(grid_size)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
             ax[i,j].imshow(images[k].data.numpy(), cmap='gray')
@@ -319,18 +327,23 @@ class fGANTrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png'
-                                         %(epoch), nrow=size_figure_grid)
+                                         %(epoch), nrow=grid_size)
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
-
         # Set style, figure size
         plt.style.use('ggplot')
         plt.rcParams["figure.figsize"] = (8,6)
 
-        # Plot Discriminator loss in red, Generator loss in green
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Dlosses, 'r')
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Glosses, 'g')
+        # Plot Discriminator loss in red
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Dlosses,
+                 'r')
+
+        # Plot Generator loss in green
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Glosses,
+                 'g')
 
         # Add legend, title
         plt.legend(['Discriminator', 'Generator'])

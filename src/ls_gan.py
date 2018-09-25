@@ -1,18 +1,17 @@
-""" (LS GAN)
+""" (LS GAN) https://arxiv.org/abs/1611.04076
 Least Squares GAN
 
-https://arxiv.org/abs/1611.04076
-
-The output of LSGAN's D is unbounded unless passed through an activation function. In this
-implementation, we include a sigmoid activation function as this empirically improves
-visualizations for binary MNIST.
+The output of LSGAN's D is unbounded unless passed through an activation
+function. In this implementation, we include a sigmoid activation function as
+this empirically improves visualizations for binary MNIST.
 
 Tackles the vanishing gradients problem associated with GANs by swapping out
-the cross entropy loss function with the least squares (L2) loss function. The authors
-show that minimizing this objective is equivalent to minimizing the Pearson chi-squared
-divergence. They claim that using the L2 loss function penalizes samples that appear to
-be real to the discriminator, but lie far away from the decision boundary. In this way,
-the generated images are made to appear closer to real data. It also stabilizes training.
+the cross entropy loss function with the least squares (L2) loss function.
+The authors show that minimizing this objective is equivalent to minimizing the
+Pearson chi-squared divergence. They claim that using the L2 loss function
+penalizes samples that appear to be real to the discriminator, but lie far away
+from the decision boundary. In this way, the generated images are made to appear
+closer to real data. It also stabilizes training.
 """
 
 import torch, torchvision
@@ -28,7 +27,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm
 
-from utils import *
+from .utils import *
 
 
 class Generator(nn.Module):
@@ -73,6 +72,8 @@ class LSGAN(nn.Module):
         self.G = Generator(image_size, hidden_dim, z_dim)
         self.D = Discriminator(image_size, hidden_dim, output_dim)
 
+        self.shape = int(image_size ** 0.5)
+
 
 class LSGANTrainer:
     """ Object to hold data iterators, train a GAN variant
@@ -93,19 +94,24 @@ class LSGANTrainer:
 
     def train(self, num_epochs, G_lr=1e-4, D_lr=1e-4, D_steps=1):
         """ Train a least-squares GAN with Gradient Penalty
-            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
+
+            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations
+            of Generator output.
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            G_lr: float, learning rate for generator's Adam optimizer (default 1e-4)
-            D_lr: float, learning rate for discriminator's Adam optimizer (default 1e-4)
-            D_steps: int, training step ratio for how often to train D compared to G (default 1)
+            G_lr: float, learning rate for generator's Adam optimize
+            D_lr: float, learning rate for discriminator's Adam optimizer
+            D_steps: int, ratio for how often to train D compared to G
         """
         # Initialize optimizers
-        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
-        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
+        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters()
+                                        if p.requires_grad], lr=G_lr)
+        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters()
+                                        if p.requires_grad], lr=D_lr)
 
-        # Approximate steps/epoch given D_steps per epoch --> roughly train in the same way as if D_step (1) == G_step (1)
+        # Approximate steps/epoch given D_steps per epoch -->
+        #  roughly train in the same way as if D_step (1) == G_step (1)
         epoch_steps = int(np.ceil(len(self.train_iter) / (D_steps)))
 
         # Begin training
@@ -141,7 +147,8 @@ class LSGANTrainer:
                 # TRAINING G: Zero out gradients for G
                 G_optimizer.zero_grad()
 
-                # Train the generator to (roughly) minimize the approximated least-squares distance
+                # Train the generator to (roughly) minimize the approximated
+                # least-squares distance
                 G_loss = self.train_G(images)
 
                 # Log results, update parameters
@@ -167,13 +174,12 @@ class LSGANTrainer:
         """ Run 1 step of training for discriminator
 
         Input:
-            images: batch of images (reshaped to [batch_size, 784])
+            images: batch of images (reshaped to [batch_size, -1])
         Output:
             D_loss: L2 loss for discriminator,
             0.50 * E[(D(x) - a)^2] + 0.50 * E[(D(G(z)) - b)^2],
             where a and b are labels for generated (0) and real (1) data
         """
-
         # Sample noise, an output from the generator
         noise = self.compute_noise(images.shape[0], self.model.z_dim)
         G_output = self.model.G(noise)
@@ -183,7 +189,8 @@ class LSGANTrainer:
         DG_score = self.model.D(G_output) # D(G(z))
 
         # Compute L2 loss for D
-        D_loss = (0.50 * torch.mean((DX_score - b)**2)) + (0.50 * torch.mean((DG_score - a)**2))
+        D_loss = (0.50 * torch.mean((DX_score - b)**2)) \
+                    + (0.50 * torch.mean((DG_score - a)**2))
 
         return D_loss
 
@@ -195,9 +202,8 @@ class LSGANTrainer:
         Output:
             G_loss: L2 loss for G,
             0.50 * E[(D(G(z)) - c)^2],
-            where c is the label that G wants D to believe for fake data (i.e., 1)
+            where c is the label that G wants D to believe for fake data (1)
         """
-
         # Get noise, classify it using G, then classify the output of G using D.
         noise = self.compute_noise(images.shape[0], self.model.z_dim) # z
         G_output = self.model.G(noise) # G(z)
@@ -209,18 +215,17 @@ class LSGANTrainer:
         return G_loss
 
     def compute_noise(self, batch_size, z_dim):
-        """ Compute random noise for the generator to learn to make images from """
+        """ Compute random noise for input into the Generator G """
         return to_cuda(torch.randn(batch_size, z_dim))
 
     def process_batch(self, iterator):
-        """ Generate a process batch to be input into the discriminator D """
+        """ Generate a process batch to be input into the Discriminator D """
         images, _ = next(iter(iterator))
         images = to_cuda(images.view(images.shape[0], -1))
         return images
 
     def generate_images(self, epoch, num_outputs=36, save=True):
         """ Visualize progress of generator learning """
-
         # Turn off any regularization
         self.model.eval()
 
@@ -231,13 +236,16 @@ class LSGANTrainer:
         images = self.model.G(noise)
 
         # Reshape to proper image size
-        images = images.view(images.shape[0], 28, 28, -1).squeeze()
+        images = images.view(images.shape[0],
+                             self.model.shape,
+                             self.model.shape,
+                             -1).squeeze()
 
         # Plot
         plt.close()
-        size_figure_grid, k = int(num_outputs**0.5), 0
-        fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
-        for i, j in product(range(size_figure_grid), range(size_figure_grid)):
+        grid_size, k = int(num_outputs**0.5), 0
+        fig, ax = plt.subplots(grid_size, grid_size, figsize=(5, 5))
+        for i, j in product(range(grid_size), range(grid_size)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
             ax[i,j].imshow(images[k].data.numpy(), cmap='gray')
@@ -250,7 +258,7 @@ class LSGANTrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png'
-                                         %(epoch), nrow=size_figure_grid)
+                                         %(epoch), nrow=grid_size)
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
@@ -258,9 +266,15 @@ class LSGANTrainer:
         plt.style.use('ggplot')
         plt.rcParams["figure.figsize"] = (8,6)
 
-        # Plot Discriminator loss in red, Generator loss in green
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Dlosses, 'r')
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Glosses, 'g')
+        # Plot Discriminator loss in red
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Dlosses,
+                 'r')
+
+        # Plot Generator loss in green
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Glosses,
+                 'g')
 
         # Add legend, title
         plt.legend(['Discriminator', 'Generator'])

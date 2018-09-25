@@ -1,28 +1,29 @@
-""" (VAE)
+""" (VAE) https://arxiv.org/abs/1312.6114
 Variational Autoencoder
-
-https://arxiv.org/pdf/1312.6114.pdf
 
 From the abstract:
 
-"We introduce a stochastic variational inference and learning algorithm that scales to large datasets
-and, under some mild differentiability conditions, even works in the intractable case. Our contributions
-is two-fold. First, we show that a reparameterization of the variational lower bound yields a lower bound
-estimator that can be straightforwardly optimized using standard stochastic gradient methods. Second, we
-show that for i.i.d. datasets with continuous latent variables per datapoint, posterior inference can be
-made especially efficient by fitting an approximate inference model (also called a recognition model) to
-the intractable posterior using the proposed lower bound estimator."
+"We introduce a stochastic variational inference and learning algorithm that
+scales to large datasets and, under some mild differentiability conditions,
+even works in the intractable case. Our contributions is two-fold. First, we
+show that a reparameterization of the variational lower bound yields a lower
+bound estimator that can be straightforwardly optimized using standard
+stochastic gradient methods. Second, we show that for i.i.d. datasets with
+continuous latent variables per datapoint, posterior inference can be made
+especially efficient by fitting an approximate inference model (also called a
+recognition model) to the intractable posterior using the proposed lower bound
+estimator."
 
-Basically VAEs encode an input into a given dimension z, reparametrize that z using it's mean and std, and
-then reconstruct the image from reparametrized z. This lets us tractably model latent representations that we
-may not be explicitly aware of that are in the data. For a simple example of what this may look like, read
-up on "Karl Pearson's Crabs." The basic idea was that a scientist collected data on a population of crabs,
-noticed that the distribution was non-normal, and Pearson postulated it was because there were likely
-more than one population of crabs studied. This would've been a latent variable, since the data colllector
-did not know.
-
+Basically VAEs encode an input into a given dimension z, reparametrize that z
+using it's mean and std, and then reconstruct the image from reparametrized z.
+This lets us tractably model latent representations that we may not be
+explicitly aware of that are in the data. For a simple example of what this may
+look like, read up on "Karl Pearson's Crabs." The basic idea was that a
+scientist collected data on a population of crabs, noticed that the distribution
+was non-normal, and Pearson postulated it was because there were likely more
+than one population of crabs studied. This would've been a latent variable,
+since the data colllector did not initially know or perhaps even suspect this.
 """
-# TODO: fix all of the shape issues
 
 import torch, torchvision
 import torch.nn as nn
@@ -45,7 +46,7 @@ from .utils import *
 
 class Encoder(nn.Module):
     """ MLP encoder for VAE. Input is an image,
-    outputs is the mean and std of the latent representation z pre-reparametrization
+    outputs are the mean, std of the latent variable z pre-reparametrization
     """
     def __init__(self, image_size, hidden_dim, z_dim):
         super().__init__()
@@ -62,7 +63,8 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     """ MLP decoder for VAE. Input is a reparametrized latent representation,
-    output is reconstructed image """
+    output is reconstructed image
+    """
     def __init__(self, z_dim, hidden_dim, image_size):
         super().__init__()
 
@@ -76,7 +78,8 @@ class Decoder(nn.Module):
 
 
 class VAE(nn.Module):
-    """ VAE super class to reconstruct an image. Contains reparametrization method
+    """ VAE super class to reconstruct an image. Contains reparametrization
+    method for latent variable z
     """
     def __init__(self, image_size=784, hidden_dim=400, z_dim=20):
         super().__init__()
@@ -86,6 +89,8 @@ class VAE(nn.Module):
         self.encoder = Encoder(image_size=image_size, hidden_dim=hidden_dim, z_dim=z_dim)
         self.decoder = Decoder(z_dim=z_dim, hidden_dim=hidden_dim, image_size=image_size)
 
+        self.shape = int(image_size ** 0.5)
+
     def forward(self, x):
         mu, log_var = self.encoder(x)
         z = self.reparameterize(mu, log_var)
@@ -93,9 +98,11 @@ class VAE(nn.Module):
         return out_img, mu, log_var
 
     def reparameterize(self, mu, log_var):
-        """" Reparametrization trick: z = mean + std*epsilon, where epsilon ~ N(0, 1)."""
+        """" Reparametrization trick: z = mean + std*epsilon,
+        where epsilon ~ N(0, 1).
+        """
         epsilon = to_cuda(torch.randn(mu.shape))
-        z = mu + epsilon * torch.exp(log_var/2)    # 2 for convert var to std
+        z = mu + epsilon * torch.exp(log_var/2) # 2 for convert var to std
         return z
 
 
@@ -119,16 +126,20 @@ class VAETrainer:
 
     def train(self, num_epochs, lr=1e-3, weight_decay=1e-5):
         """ Train a Variational Autoencoder
-            Logs progress using total loss, reconstruction loss, kl_divergence, and validation loss
+
+            Logs progress using total loss, reconstruction loss, kl_divergence,
+            and validation loss
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            lr: float, learning rate for Adam optimizer (default 1e-3)
-            weight_decay: float, weight decay for Adam optimizer (default 1e-5)
+            lr: float, learning rate for Adam optimizer
+            weight_decay: float, weight decay for Adam optimizer
         """
-
         # Adam optimizer, sigmoid cross entropy for reconstructing binary MNIST
-        optimizer = optim.Adam(params=[p for p in self.model.parameters() if p.requires_grad], lr=lr, weight_decay=weight_decay)
+        optimizer = optim.Adam(params=[p for p in self.model.parameters()
+                                      if p.requires_grad],
+                               lr=lr,
+                               weight_decay=weight_decay)
 
         # Begin training
         for epoch in tqdm(range(1, num_epochs+1)):
@@ -141,9 +152,10 @@ class VAETrainer:
                 # Zero out gradients
                 optimizer.zero_grad()
 
-                # Compute reconstruction loss, Kullback-Leibler divergence for a batch
+                # Compute reconstruction loss, Kullback-Leibler divergence
+                # for a batch for the variational lower bound (ELBO)
                 recon_loss, kl_diverge = self.compute_batch(batch)
-                batch_loss = recon_loss + kl_diverge # ELBO
+                batch_loss = recon_loss + kl_diverge
 
                 # Update parameters
                 batch_loss.backward()
@@ -169,7 +181,8 @@ class VAETrainer:
 
             # Progress logging
             print ("Epoch[%d/%d], Total Loss: %.4f, Reconst Loss: %.4f, KL Div: %.7f, Val Loss: %.4f"
-                   %(epoch, num_epochs, np.mean(epoch_loss), np.mean(epoch_recon), np.mean(epoch_kl), val_loss))
+                   %(epoch, num_epochs, np.mean(epoch_loss),
+                   np.mean(epoch_recon), np.mean(epoch_kl), val_loss))
             self.num_epochs += 1
 
             # Debugging and visualization purposes
@@ -179,7 +192,6 @@ class VAETrainer:
 
     def compute_batch(self, batch):
         """ Compute loss for a batch of examples """
-
         # Reshape images
         images, _ = batch
         images = to_cuda(images.view(images.shape[0], -1))
@@ -212,7 +224,6 @@ class VAETrainer:
 
     def reconstruct_images(self, images, epoch, save=True):
         """ Sample images from latent space at each epoch """
-
         # Reshape images, pass through model, reshape reconstructed output
         batch = to_cuda(images.view(images.shape[0], -1))
         reconst_images, _, _ = self.model(batch)
@@ -220,9 +231,9 @@ class VAETrainer:
 
         # Plot
         plt.close()
-        size_figure_grid, k = int(reconst_images.shape[0]**0.5), 0
-        fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
-        for i, j in product(range(size_figure_grid), range(size_figure_grid)):
+        grid_size, k = int(reconst_images.shape[0]**0.5), 0
+        fig, ax = plt.subplots(grid_size, grid_size, figsize=(5, 5))
+        for i, j in product(range(grid_size), range(grid_size)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
             ax[i,j].imshow(reconst_images[k].data.numpy(), cmap='gray')
@@ -235,25 +246,22 @@ class VAETrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.data,
                                          outname + 'real.png',
-                                         nrow=size_figure_grid)
+                                         nrow=grid_size)
             torchvision.utils.save_image(reconst_images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png' %(epoch),
-                                         nrow=size_figure_grid)
+                                         nrow=grid_size)
 
     def sample_images(self, epoch=-100, num_images=36, save=True):
         """ Viz method 1: generate images by sampling z ~ p(z), x ~ p(x|z,θ) """
-        # Sample from latent space randomly, visualize output
-        size = self.model.decoder.linear.in_features ** 0.5
-
         # Sample z
-        z = to_cuda(torch.randn(num_images, self.model.decoder.linear.in_features))
+        z = to_cuda(torch.randn(num_images, self.model.z_dim))
 
         # Pass into decoder
         sample = self.model.decoder(z)
 
         # Plot
         to_img = ToPILImage()
-        img = to_img(make_grid(sample.data.view(num_images, 1, 28, 28),
+        img = to_img(make_grid(sample.data.view(num_images, -1, size, size),
                      nrow=int(num_images**0.5)))
         display(img)
 
@@ -269,19 +277,22 @@ class VAETrainer:
         then sample from their interpolated values
         """
         # Sample latent vectors
-        z1 = torch.normal(torch.zeros(self.model.decoder.linear.in_features), 1)
-        z2 = torch.normal(torch.zeros(self.model.decoder.linear.in_features), 1)
+        z1 = torch.normal(torch.zeros(self.model.z_dim), 1)
+        z2 = torch.normal(torch.zeros(self.model.z_dim), 1)
         to_img = ToPILImage()
 
         # Interpolate within latent vectors
-        for alpha in np.linspace(0, 1, self.model.decoder.linear.in_features):
+        for alpha in np.linspace(0, 1, self.model.z_dim):
             z = to_cuda(alpha*z1 + (1-alpha)*z2)
             sample = self.model.decoder(z)
-            display(to_img(make_grid(sample.data.view(28, 28).unsqueeze(0))))
+            display(to_img(make_grid(sample.data.view(-1,
+                                                      self.model.shape,
+                                                      self.model.shape))))
 
     def explore_latent_space(self, num_epochs=3):
-        """ Viz method 3: train a VAE with 2 latent variables, compare variational means """
-
+        """ Viz method 3: train a VAE with 2 latent variables,
+        compare variational means
+        """
         # Initialize and train a VAE with size two dimension latent space
         train_iter, val_iter, test_iter = get_data()
         latent_model = VAE(image_size=784, hidden_dim=400, z_dim=2)
@@ -311,12 +322,16 @@ class VAETrainer:
                           for m2 in np.linspace(-2, 2, 10)])
         samples = latent_model.decoder(to_cuda(mu))
         to_img = ToPILImage()
-        display(to_img(make_grid(samples.data.view(-1, 1, 28, 28), nrow=10)))
+        display(to_img(make_grid(samples.data.view(mu.shape[0],
+                                                   -1,
+                                                   latent_model.shape,
+                                                   latent_model.shape),
+                                 nrow=10)))
 
         return latent_model
 
     def make_all(self):
-        """ Execute all viz methods outlined in this class """
+        """ Execute all latent space viz methods outlined in this class """
 
         print('Sampled images from latent space:')
         self.sample_images(save=False)
@@ -351,7 +366,7 @@ class VAETrainer:
         torch.save(self.model.state_dict(), savepath)
 
     def load_model(self, loadpath):
-        """ Load state dictionary into model. If model not specified, instantiate it """
+        """ Load state dictionary into model """
         state = torch.load(loadpath)
         self.model.load_state_dict(state)
 

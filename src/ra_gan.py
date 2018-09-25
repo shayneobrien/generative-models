@@ -1,10 +1,10 @@
-""" (RaGAN)
+""" (RaGAN) https://arxiv.org/abs/1807.00734
+Relativistic GAN
+
 Relativistic GANs argue that the GAN generator should decrease the
 discriminator's output probability that real data is real in addition to
 increasing its output probability that fake data is real. By doing this, GANs
 are claimed to be more stable and generate higher quality images.
-
-https://arxiv.org/abs/1807.00734
 
 Discriminator loss is changed such that the discriminator estimates the
 probability that the given real data is more realistic than a randomly sampled
@@ -12,12 +12,15 @@ fake data. Generator loss is change such that real data is less likely to be
 classified as real and fake data is more likely to be classified as real.
 
 For computational efficiency, the discriminator estimates the probability that
-the given real data is more realistic than fake data, on average. Otherwise, the
-network would need to consider all combinations of real and fake data in the
+the given real data is more realistic than fake data, on average. Otherwise,
+the network would need to consider all combinations of real and fake data in the
 minibatch. This would require O(m^2) instead of O(m), where m is batch size.
 
-L(D) = -E[log( sigmoid(D(x) - E[D(G(z))]) )] - E[log(1 - sigmoid(D(G(z)) - E[D(x)]))]
-L(G) = -E[log( sigmoid(D(G(z)) - E[D(x)]) )] - E[log(1 - sigmoid(D(x) - E[D(G(z))]))]
+L(D) = -E[log( sigmoid(D(x) - E[D(G(z))]) )]
+        - E[log(1 - sigmoid(D(G(z)) - E[D(x)]))]
+
+L(G) = -E[log( sigmoid(D(G(z)) - E[D(x)]) )]
+        - E[log(1 - sigmoid(D(x) - E[D(G(z))]))]
 
 This implementation uses non-saturating (NS) GAN as a case study. The actual
 modification proposed herein can be applied to any GAN in which the output of
@@ -37,7 +40,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm
 
-from utils import *
+from .utils import *
 
 
 class Generator(nn.Module):
@@ -55,7 +58,8 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    """ Discriminator. Input is an image (real or generated), output is P(generated).
+    """ Discriminator. Input is an image (real or generated),
+    output is P(generated).
     """
     def __init__(self, image_size, hidden_dim, output_dim):
         super().__init__()
@@ -79,6 +83,8 @@ class RaNSGAN(nn.Module):
         self.G = Generator(image_size, hidden_dim, z_dim)
         self.D = Discriminator(image_size, hidden_dim, output_dim)
 
+        self.shape = int(image_size ** 0.5)
+
 
 class RaNSGANTrainer:
     """ Object to hold data iterators, train a GAN variant
@@ -99,17 +105,21 @@ class RaNSGANTrainer:
 
     def train(self, num_epochs, G_lr=2e-4, D_lr=2e-4, D_steps=1):
         """ Train a relativistic non-saturating GAN
-            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
+
+            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations
+            of Generator output.
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            G_lr: float, learning rate for generator's Adam optimizer (default 2e-4)
-            D_lr: float, learning rate for discriminator's Adam optimizer (default 2e-4)
-            D_steps: int, training step ratio for how often to train D compared to G (default 1)
+            G_lr: float, learning rate for generator's Adam optimizer
+            D_lr: float, learning rate for discriminator's Adam optimizer
+            D_steps: int, ratio for how often to train D compared to G
         """
         # Initialize optimizers
-        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
-        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
+        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters()
+                                        if p.requires_grad], lr=G_lr)
+        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters()
+                                        if p.requires_grad], lr=D_lr)
 
         # Approximate steps/epoch given D_steps per epoch
         # --> roughly train in the same way as if D_step (1) == G_step (1)
@@ -174,10 +184,11 @@ class RaNSGANTrainer:
         """ Run 1 step of training for discriminator
 
         Input:
-            images: batch of images (reshaped to [batch_size, 784])
+            images: batch of images (reshaped to [batch_size, -1])
         Output:
             D_loss: non-saturing loss for discriminator,
-            -E[log( sigmoid(D(x) - E[D(G(z))]) )] - E[log(1 - sigmoid(D(G(z)) - E[D(x)]))]
+            -E[log( sigmoid(D(x) - E[D(G(z))]) )]
+              - E[log(1 - sigmoid(D(G(z)) - E[D(x)]))]
         """
         # Classify the real batch images, get the loss for these
         DX_score = self.model.D(images)
@@ -186,12 +197,12 @@ class RaNSGANTrainer:
         noise = self.compute_noise(images.shape[0], self.model.z_dim)
         G_output = self.model.G(noise)
 
-        # Classify the fake batch images, get the loss for these using sigmoid cross entropy
+        # Classify the generated batch images
         DG_score = self.model.D(G_output)
 
         # Compute D loss
-        D_loss = -torch.mean(torch.log(torch.sigmoid(DX_score-torch.mean(DG_score)) + 1e-8) \
-                              + torch.log(torch.sigmoid(1 - DG_score) + 1e-8)) / 2
+        D_loss = -torch.mean(torch.log(torch.sigmoid(DX_score-DG_score.mean())+1e-8) \
+                    + torch.log(torch.sigmoid(1 - DG_score) + 1e-8)) / 2
 
         return D_loss
 
@@ -202,20 +213,23 @@ class RaNSGANTrainer:
             images: batch of images reshaped to [batch_size, -1]
         Output:
             G_loss: non-saturating loss for how well G(z) fools D,
-            -E[log( sigmoid(D(G(z)) - E[D(x)]) )] - E[log(1 - sigmoid(D(x) - E[D(G(z))]))]
+            -E[log(sigmoid(D(G(z))-E[D(x)]))]
+                -E[log(1-sigmoid(D(x)-E[D(G(z))]))]
         """
-        # Get noise (denoted z), classify it using G, then classify the output of G using D.
+        # Get noise (denoted z), classify it using G, then classify the output
+        # of G using D.
         noise = self.compute_noise(images.shape[0], self.model.z_dim) # z
         G_output = self.model.G(noise) # G(z)
         DG_score = self.model.D(G_output) # D(G(z))
 
-        # Compute the non-saturating loss for how D did versus the generations of G using sigmoid cross entropy
+        # Compute the non-saturating loss for how D did versus the generations
+        # of G
         G_loss = -torch.mean(torch.log(DG_score + 1e-8))
 
         return G_loss
 
     def compute_noise(self, batch_size, z_dim):
-        """ Compute random noise for the generator to learn to make images from """
+        """ Compute random noise for the input to Generator G """
         return to_cuda(torch.randn(batch_size, z_dim))
 
     def process_batch(self, iterator):
@@ -235,14 +249,17 @@ class RaNSGANTrainer:
         # Transform noise to image
         images = self.model.G(noise)
 
-        # Reshape to proper image size
-        images = images.view(images.shape[0], 28, 28, -1).squeeze()
+        # Reshape to square image size
+        images = images.view(images.shape[0],
+                             self.model.shape,
+                             self.model.shape,
+                             -1).squeeze()
 
         # Plot
         plt.close()
-        size_figure_grid, k = int(num_outputs**0.5), 0
-        fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
-        for i, j in product(range(size_figure_grid), range(size_figure_grid)):
+        grid_size, k = int(num_outputs**0.5), 0
+        fig, ax = plt.subplots(grid_size, grid_size, figsize=(5, 5))
+        for i, j in product(range(grid_size), range(grid_size)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
             ax[i,j].imshow(images[k].data.numpy(), cmap='gray')
@@ -255,7 +272,7 @@ class RaNSGANTrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png'
-                                         %(epoch), nrow=size_figure_grid)
+                                         %(epoch), nrow=grid_size)
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
@@ -263,10 +280,12 @@ class RaNSGANTrainer:
         plt.style.use('ggplot')
         plt.rcParams["figure.figsize"] = (8,6)
 
-        # Plot Discriminator loss in red, Generator loss in green
+        # Plot Discriminator loss in red
         plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
                  self.Dlosses,
                  'r')
+
+        # Plot Generator loss in green
         plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
                  self.Glosses,
                  'g')

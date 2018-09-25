@@ -1,8 +1,5 @@
-""" (BIR-VAE)
+""" (BIR-VAE) https://arxiv.org/abs/1807.07306
 Bounded Information Rate Variational Autoencoder
-
-http://www.kdd.org/kdd2018/files/deep-learning-day/DLDay18_paper_31.pdf
-
 
 This VAE variant makes a slight change to the original formulation
 in an effort to enforce mutual information between our inputs x and the
@@ -16,10 +13,7 @@ the differential entropy between h_q(z)[z] and h_q(z|x)[z] are both fixed
 (Eqn. 10/11). The output of the decode is the mean of the isotropic
 Gaussian with variance 1, so the log likelihood reduced to the negative
 mean square error (i.e. we use MSELoss instead of NLLLoss).
-
 """
-import os, sys
-sys.path.append(os.path.abspath(os.path.join('..')))
 
 import torch, torchvision
 import torch.nn as nn
@@ -37,12 +31,12 @@ from copy import deepcopy
 from tqdm import tqdm
 from itertools import product
 
-from utils import *
+from .utils import *
 
 
 class Encoder(nn.Module):
-    """ MLP encoder for VAE. Input is an image,
-    outputs is the mean and std of the latent representation z pre-reparametrization
+    """ MLP encoder for VAE. Input is an image, outputs are the mean and std of
+    the latent representation z pre-reparametrization
     """
     def __init__(self, image_size, hidden_dim, z_dim):
         super().__init__()
@@ -58,7 +52,8 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     """ MLP decoder for VAE. Input is a reparametrized latent representation,
-    output is reconstructed image """
+    output is reconstructed image
+    """
     def __init__(self, z_dim, hidden_dim, image_size):
         super().__init__()
 
@@ -72,8 +67,8 @@ class Decoder(nn.Module):
 
 
 class BIRVAE(nn.Module):
-    """ VAE super class to reconstruct an image. Contains reparametrization method
-    Parameter I indicates how many bits should be let through.
+    """ VAE super class to reconstruct an image. Contains reparametrization
+    method. Parameter I indicates how many 'bits' should be let through.
     """
     def __init__(self, image_size=784, hidden_dim=400, z_dim=20, I=13.3):
         super().__init__()
@@ -83,6 +78,7 @@ class BIRVAE(nn.Module):
         self.encoder = Encoder(image_size=image_size, hidden_dim=hidden_dim, z_dim=z_dim)
         self.decoder = Decoder(z_dim=z_dim, hidden_dim=hidden_dim, image_size=image_size)
 
+        self.shape = int(image_size ** 0.5)
         self.set_var = 1/(4**(I/z_dim))
 
     def forward(self, x):
@@ -93,7 +89,9 @@ class BIRVAE(nn.Module):
 
     def reparameterize(self, mu):
         """" Reparametrization trick: z = mean + epsilon, where epsilon ~ N(0, set_var)."""
-        eps = to_cuda(torch.from_numpy(np.random.normal(loc=0.0, scale=self.set_var, size=mu.shape)).float())
+        eps = to_cuda(torch.from_numpy(np.random.normal(loc=0.0,
+                                                        scale=self.set_var,
+                                                        size=mu.shape)).float())
         z = mu + eps # Algorithm 1
         return z
 
@@ -118,17 +116,18 @@ class BIRVAETrainer:
 
     def train(self, num_epochs, lr=1e-3, weight_decay=1e-5):
         """ Train a Variational Autoencoder
+
             Logs progress using total loss, reconstruction loss, maximum mean
             discrepancy (MMD), and validation loss
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            lr: float, learning rate for Adam optimizer (default 1e-3)
-            weight_decay: float, weight decay for Adam optimizer (default 1e-5)
+            lr: float, learning rate for Adam optimizer
+            weight_decay: float, weight decay for Adam optimizer
         """
-
         # Adam optimizer, sigmoid cross entropy for reconstructing binary MNIST
-        optimizer = optim.Adam(params=[p for p in self.model.parameters() if p.requires_grad],
+        optimizer = optim.Adam(params=[p for p in self.model.parameters()
+                                       if p.requires_grad],
                                lr=lr,
                                weight_decay=weight_decay)
 
@@ -181,7 +180,7 @@ class BIRVAETrainer:
     def compute_batch(self, batch, LAMBDA=1000.):
         """ Compute loss for a batch of examples
 
-        LAMBDA: (float) a weighting factor for MMD loss vs. MSE loss (default 1000)
+        LAMBDA: (float) a weighting factor for MMD loss vs. MSE loss
         """
 
         # Reshape images
@@ -209,11 +208,7 @@ class BIRVAETrainer:
         return mmd_loss
 
     def compute_kernel(self, x, y):
-        """ Compute Gaussian kernel for MMD (Eqn. 13)
-
-        Credit to
-        https://github.com/napsternxg/pytorch-practice/blob/master/Pytorch%20-%20MMD%20VAE.ipynb
-        """
+        """ Compute Gaussian kernel for MMD (Eqn. 13) """
         # Get sizes, dimensions
         x_size, y_size, dim = x.size(0), y.size(0), x.size(1)
 
@@ -222,7 +217,7 @@ class BIRVAETrainer:
         tiled_x, tiled_y = x.expand(x_size, y_size, dim), y.expand(x_size, y_size, dim)
 
         # Compute Gaussian Kernel (Eqn. 13)
-        kernel_input = torch.div(torch.mean(torch.pow(tiled_x - tiled_y, 2), dim=2), dim)
+        kernel_input = torch.div(torch.mean(torch.pow(tiled_x-tiled_y, 2), dim=2), dim)
         return torch.exp(-kernel_input)
 
     def evaluate(self, iterator):
@@ -237,8 +232,9 @@ class BIRVAETrainer:
         return loss
 
     def reconstruct_images(self, images, epoch, save=True):
-        """Reconstruct a fixed input at each epoch for progress visualization """
-
+        """ Reconstruct a fixed input at each epoch for progress
+        visualization
+        """
         # Reshape images, pass through model, reshape reconstructed output
         batch = to_cuda(images.view(images.shape[0], -1))
         reconst_images, _ = self.model(batch)
@@ -246,9 +242,9 @@ class BIRVAETrainer:
 
         # Plot
         plt.close()
-        size_figure_grid, k = int(reconst_images.shape[0]**0.5), 0
-        fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
-        for i, j in product(range(size_figure_grid), range(size_figure_grid)):
+        grid_size, k = int(reconst_images.shape[0]**0.5), 0
+        fig, ax = plt.subplots(grid_size, grid_size, figsize=(5, 5))
+        for i, j in product(range(grid_size), range(grid_size)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
             ax[i,j].imshow(reconst_images[k].data.numpy(), cmap='gray')
@@ -261,26 +257,27 @@ class BIRVAETrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.data,
                                          outname + 'real.png',
-                                         nrow=size_figure_grid)
+                                         nrow=grid_size)
             torchvision.utils.save_image(reconst_images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png' %(epoch),
-                                         nrow=size_figure_grid)
+                                         nrow=grid_size)
 
     def sample_images(self, epoch=-100, num_images=36, save=True):
         """ Viz method 1: generate images by sampling z ~ p(z), x ~ p(x|z,θ) """
-        # Sample from latent space randomly, visualize output
-        size = self.model.decoder.linear.in_features ** 0.5
 
         # Sample z
-        z = to_cuda(torch.randn(num_images, self.model.decoder.linear.in_features))
+        z = to_cuda(torch.randn(num_images, self.model.z_dim))
 
         # Pass into decoder
         sample = self.model.decoder(z)
 
         # Plot
         to_img = ToPILImage()
-        img = to_img(make_grid(sample.data.view(num_images, 1, 28, 28),
-                     nrow=int(num_images**0.5)))
+        img = to_img(make_grid(sample.data.view(num_images,
+                                                -1,
+                                                self.model.shape,
+                                                self.model.shape),
+                               nrow=int(num_images**0.5)))
         display(img)
 
         # Save
@@ -295,19 +292,22 @@ class BIRVAETrainer:
         then sample from their interpolated values """
 
         # Sample latent vectors
-        z1 = torch.normal(torch.zeros(self.model.decoder.linear.in_features), 1)
-        z2 = torch.normal(torch.zeros(self.model.decoder.linear.in_features), 1)
+        z1 = torch.normal(torch.zeros(self.model.z_dim), 1)
+        z2 = torch.normal(torch.zeros(self.model.z_dim), 1)
         to_img = ToPILImage()
 
         # Interpolate within latent vectors
-        for alpha in np.linspace(0, 1, self.model.decoder.linear.in_features):
+        for alpha in np.linspace(0, 1, self.model.z_dim):
             z = to_cuda(alpha*z1 + (1-alpha)*z2)
             sample = self.model.decoder(z)
-            display(to_img(make_grid(sample.data.view(28, 28).unsqueeze(0))))
+            display(to_img(make_grid(sample.data.view(-1,
+                                                      self.model.shape,
+                                                      self.model.shape))))
 
     def explore_latent_space(self, num_epochs=3):
-        """ Viz method 3: train a VAE with 2 latent variables, compare variational means """
-
+        """ Viz method 3: train a VAE with 2 latent variables,
+        compare variational means
+        """
         # Initialize and train a VAE with size two dimension latent space
         train_iter, val_iter, test_iter = get_data()
         latent_model = BIRVAE(image_size=784, hidden_dim=400, z_dim=2, I=13.3)
@@ -337,7 +337,11 @@ class BIRVAETrainer:
                           for m2 in np.linspace(-2, 2, 10)])
         samples = latent_model.decoder(to_cuda(mu))
         to_img = ToPILImage()
-        display(to_img(make_grid(samples.data.view(-1, 1, 28, 28), nrow=10)))
+        display(to_img(make_grid(samples.data.view(mu.shape[0],
+                                                   -1,
+                                                   latent_model.shape,
+                                                   latent_model.shape),
+                                 nrow=10)))
 
         return latent_model
 
@@ -359,10 +363,12 @@ class BIRVAETrainer:
         plt.style.use('ggplot')
         plt.rcParams["figure.figsize"] = (8,6)
 
-        # Plot reconstruction loss in red, KL divergence in green
+        # Plot reconstruction loss in red
         plt.plot(np.linspace(1, self.num_epochs, len(self.recon_loss)),
                  self.recon_loss,
                  'r')
+
+        # Plot KL-divergence in green
         plt.plot(np.linspace(1, self.num_epochs, len(self.mmd_loss)),
                  self.mmd_loss,
                  'g')
@@ -377,7 +383,7 @@ class BIRVAETrainer:
         torch.save(self.model.state_dict(), savepath)
 
     def load_model(self, loadpath):
-        """ Load state dictionary into model. If model not specified, instantiate it """
+        """ Load state dictionary into model """
         state = torch.load(loadpath)
         self.model.load_state_dict(state)
 

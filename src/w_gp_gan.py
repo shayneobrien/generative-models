@@ -1,16 +1,18 @@
-""" (WGANGP)
-Wasserstein GAN with Gradient Penalties ('improved methods for WGAN training')
+""" (WGPGAN) https://arxiv.org/abs/1701.07875
+Wasserstein GAN with Gradient Penalties ('Improved Training of Wasserstein GANs')
 
-https://arxiv.org/abs/1704.00028
+The output of WGPGAN's D is unbounded unless passed through an activation
+function. In this implementation, we use a ReLU activation function
+as this empirically improves visualizations for binary MNIST.
 
-The output of WGANGP's D is unbounded unless passed through an activation function. In this implementation,
-we include a sigmoid activation function as this empirically improves visualizations for binary MNIST.
-
-WGAN GP roposes a gradient penalty to add to the WGAN discriminator loss as an alternative method for enforcing
-the Lipschitz constraint (previously done via weight clipping). This penalty does not suffer from the biasing
-of the discriminator toward simple funtions due to weight clipping. Additionally, the reformulation of the
-discriminator by adding a gradient penaltyterm makes batch normalization not necessary. This is notable because
-batch normalization implicitly changes the discriminator's problem from mapping one-to-one to many-to-many.
+WGAN GP roposes a gradient penalty to add to the WGAN discriminator loss as an
+alternative method for enforcing the Lipschitz constraint (previously done via
+weight clipping). This penalty does not suffer from the biasing of the
+discriminator toward simple funtions due to weight clipping. Additionally, the
+reformulation of the discriminator by adding a gradient penaltyterm makes batch
+normalization not necessary. This is notable because batch normalization
+implicitly changes the discriminator's problem from mapping one-to-one to
+many-to-many.
 """
 
 import torch, torchvision
@@ -26,7 +28,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm
 
-from utils import *
+from .utils import *
 
 
 class Generator(nn.Module):
@@ -60,7 +62,7 @@ class Discriminator(nn.Module):
         return discrimination
 
 
-class WGANGP(nn.Module):
+class WGPGAN(nn.Module):
     """ Super class to contain both Discriminator (D) and Generator (G)
     """
     def __init__(self, image_size, hidden_dim, z_dim, output_dim=1):
@@ -71,8 +73,10 @@ class WGANGP(nn.Module):
         self.G = Generator(image_size, hidden_dim, z_dim)
         self.D = Discriminator(image_size, hidden_dim, output_dim)
 
+        self.shape = int(image_size ** 0.5)
 
-class WGANGPTrainer:
+
+class WGPGANTrainer:
     """ Object to hold data iterators, train a GAN variant
     """
     def __init__(self, model, train_iter, val_iter, test_iter, viz=False):
@@ -91,17 +95,21 @@ class WGANGPTrainer:
 
     def train(self, num_epochs, G_lr=1e-4, D_lr=1e-4, D_steps=5):
         """ Train a WGAN GP
-            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
+
+            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations
+            of Generator output.
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            G_lr: float, learning rate for generator's Adam optimizer (default 1e-4)
-            D_lr: float, learning rate for discriminator's Adam optimizer (default 1e-4)
-            D_steps: int, training step ratio for how often to train D compared to G (default 5)
+            G_lr: float, learning rate for generator's Adam optimizer
+            D_lr: float, learning rate for discriminator's Adam optimizer
+            D_steps: int, ratio for how often to train D compared to G
         """
         # Initialize optimizers
-        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
-        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
+        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters()
+                                        if p.requires_grad], lr=G_lr)
+        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters()
+                                        if p.requires_grad], lr=D_lr)
 
         # Approximate steps/epoch given D_steps per epoch
         # --> roughly train in the same way as if D_step (1) == G_step (1)
@@ -125,8 +133,8 @@ class WGANGPTrainer:
                     # TRAINING D: Zero out gradients for D
                     D_optimizer.zero_grad()
 
-                    # Train the discriminator to approximate the Wasserstein distance between real, generated
-                    # distributions
+                    # Train the discriminator to approximate the Wasserstein
+                    # distance between real, generated distributions
                     D_loss = self.train_D(images)
 
                     # Update parameters
@@ -136,13 +144,15 @@ class WGANGPTrainer:
                     # Log results, backpropagate the discriminator network
                     D_step_loss.append(D_loss.item())
 
-                # We report D_loss in this way so that G_loss and D_loss have the same number of entries.
+                # We report D_loss in this way so that G_loss and D_loss have
+                # the same number of entries.
                 D_losses.append(np.mean(D_step_loss))
 
                 # TRAINING G: Zero out gradients for G
                 G_optimizer.zero_grad()
 
-                # Train the generator to (roughly) minimize the approximated Wasserstein distance
+                # Train the generator to (roughly) minimize the approximated
+                # Wasserstein distance
                 G_loss = self.train_G(images)
 
                 # Log results, update parameters
@@ -168,12 +178,11 @@ class WGANGPTrainer:
         """ Run 1 step of training for discriminator
 
         Input:
-            images: batch of images (reshaped to [batch_size, 784])
+            images: batch of images (reshaped to [batch_size, -1])
         Output:
             D_loss: Wasserstein loss for discriminator,
             -E[D(x)] + E[D(G(z))] + λE[(||∇ D(εx + (1 − εG(z)))|| - 1)^2]
         """
-
         # ORIGINAL CRITIC STEPS:
         # Sample noise, an output from the generator
         noise = self.compute_noise(images.shape[0], self.model.z_dim)
@@ -230,7 +239,7 @@ class WGANGPTrainer:
         return G_loss
 
     def compute_noise(self, batch_size, z_dim):
-        """ Compute random noise for the generator to learn to make images from """
+        """ Compute random noise for input to the Generator G """
         return to_cuda(torch.randn(batch_size, z_dim))
 
     def process_batch(self, iterator):
@@ -250,14 +259,17 @@ class WGANGPTrainer:
         # Transform noise to image
         images = self.model.G(noise)
 
-        # Reshape to proper image size
-        images = images.view(images.shape[0], 28, 28, -1).squeeze()
+        # Reshape to square image size
+        images = images.view(images.shape[0],
+                             self.model.shape,
+                             self.model.shape,
+                             -1).squeeze()
 
         # Plot
         plt.close()
-        size_figure_grid, k = int(num_outputs**0.5), 0
-        fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
-        for i, j in product(range(size_figure_grid), range(size_figure_grid)):
+        grid_size, k = int(num_outputs**0.5), 0
+        fig, ax = plt.subplots(grid_size, grid_size, figsize=(5, 5))
+        for i, j in product(range(grid_size), range(grid_size)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
             ax[i,j].imshow(images[k].data.numpy(), cmap='gray')
@@ -270,7 +282,7 @@ class WGANGPTrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png'
-                                         %(epoch), nrow=size_figure_grid)
+                                         %(epoch), nrow=grid_size)
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
@@ -278,9 +290,15 @@ class WGANGPTrainer:
         plt.style.use('ggplot')
         plt.rcParams["figure.figsize"] = (8,6)
 
-        # Plot Discriminator loss in red, Generator loss in green
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Dlosses, 'r')
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Glosses, 'g')
+        # Plot Discriminator loss in red
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Dlosses,
+                 'r')
+
+        # Plot Generator loss in green
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Glosses,
+                 'g')
 
         # Add legend, title
         plt.legend(['Discriminator', 'Generator'])
@@ -302,12 +320,12 @@ if __name__ == "__main__":
     train_iter, val_iter, test_iter = get_data()
 
     # Init model
-    model = WGANGP(image_size=784,
+    model = WGPGAN(image_size=784,
                    hidden_dim=400,
                    z_dim=20)
 
     # Init trainer
-    trainer = WGANGPTrainer(model=model,
+    trainer = WGPGANTrainer(model=model,
                             train_iter=train_iter,
                             val_iter=val_iter,
                             test_iter=test_iter,

@@ -1,23 +1,27 @@
-""" (WGAN)
-Wasserstein GAN as laid out in original paper.
+""" (WGAN) https://arxiv.org/abs/1701.07875
+Wasserstein GAN
 
-https://arxiv.org/abs/1701.07875
+The output of WGAN's D is unbounded unless passed through an activation
+function. In this implementation, we include a sigmoid activation function
+as this empirically improves visualizations for binary MNIST.
 
-The output of WGAN's D is unbounded unless passed through an activation function. In this implementation,
-we include a sigmoid activation function as this empirically improves visualizations for binary MNIST.
+WGAN utilizes the Wasserstein distance to produce a value function which has
+better theoretical properties than the vanilla GAN. In particular, the authors
+prove that there exist distributions for which Jenson-Shannon, Kullback-Leibler,
+Reverse Kullback Leibler, and Total Variaton distance metrics where Wasserstein
+does. Furthermore, the Wasserstein distance has guarantees of continuity and
+differentiability in neural network settings where the previously mentioned
+distributions may not. Lastly, they show that that every distribution that
+converges under KL, reverse-KL, TV, and JS divergences also converges under the
+Wasserstein divergence and that a small Wasserstein distance corresponds to a
+small difference in distributions. The downside is that Wasserstein distance
+cannot be tractably computed directly. But if we make sure the discriminator
+(aka Critic because it is not actually classifying) lies in the space of
+1-Lipschitz functions, we can use that to approximate it instead. We crudely
+enforce this via a weight clamping parameter C.
 
-WGAN utilizes the Wasserstein distance to produce a value function whichhas better theoretical properties
-than the vanilla GAN. In particular, the authors prove that there exist distributions for which Jenson-Shannon,
-Kullback-Leibler, Reverse Kullback Leibler, and Total Variaton distance metrics where Wasserstein does. Furthermore,
-the Wasserstein distance has guarantees of continuity and and differentiability in neural network settings where
-the previously mentioned distributions may not. Lastly, they show that that every distribution that converges under
-KL, reverse-KL, TV, and JS divergences also converges under the Wasserstein divergence and that a small Wasserstein
-distance corresponds to a small difference in distributions. The downside is that Wasserstein distance cannot be
-tractably computed directly. But if we make sure the discriminator (aka Critic because it is not actually classifying)
-lies in the space of 1-Lipschitz functions, we can use that to approximate it instead. We crudely enforce this
-via a weight clamping parameter C.
-
-Note that this implementation uses RMSprop optimizer instead of Adam as per the paper.
+Note that this implementation uses RMSprop optimizer instead of Adam, as per
+the original paper.
 """
 
 import torch, torchvision
@@ -33,7 +37,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm
 
-from utils import *
+from .utils import *
 
 
 class Generator(nn.Module):
@@ -78,6 +82,8 @@ class WGAN(nn.Module):
         self.G = Generator(image_size, hidden_dim, z_dim)
         self.D = Discriminator(image_size, hidden_dim, output_dim)
 
+        self.shape = int(image_size ** 0.5)
+
 
 class WGANTrainer:
     """ Object to hold data iterators, train a GAN variant
@@ -98,18 +104,22 @@ class WGANTrainer:
 
     def train(self, num_epochs, G_lr=5e-5, D_lr=5e-5, D_steps=5, clip=0.01):
         """ Train a Wasserstein GAN
-            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
+
+            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations
+            of Generator output.
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            G_lr: float, learning rate for generator's RMProp optimizer (default 5e-5)
-            D_lr: float, learning rate for discriminator's RMSProp optimizer (default 5e-5)
-            D_steps: int, training step ratio for how often to train D compared to G (default 5)
-            clip: float, bound for parameters [-c, c] to crudely ensure K-Lipschitz (default 0.01)
+            G_lr: float, learning rate for generator's RMProp optimizer
+            D_lr: float, learning rate for discriminator's RMSProp optimizer
+            D_steps: int, ratio for how often to train D compared to G
+            clip: float, bound for parameters [-c, c] to enforce K-Lipschitz
         """
         # Initialize optimizers
-        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
-        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
+        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters()
+                                        if p.requires_grad], lr=G_lr)
+        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters()
+                                        if p.requires_grad], lr=D_lr)
 
         # Approximate steps/epoch given D_steps per epoch
         # --> roughly train in the same way as if D_step (1) == G_step (1)
@@ -133,8 +143,8 @@ class WGANTrainer:
                     # TRAINING D: Zero out gradients for D
                     D_optimizer.zero_grad()
 
-                    # Train the discriminator to approximate the Wasserstein distance between real, generated
-                    # distributions
+                    # Train the discriminator to approximate the Wasserstein
+                    # distance between real, generated distributions
                     D_loss = self.train_D(images)
 
                     # Update parameters
@@ -144,16 +154,18 @@ class WGANTrainer:
                     # Log results, backpropagate the discriminator network
                     D_step_loss.append(D_loss.item())
 
-                    # Clamp weights as per original paper (this is a crude way of ensuring K-Lipschitz)
+                    # Clamp weights (crudely enforces K-Lipschitz)
                     self.clip_D_weights(clip)
 
-                # We report D_loss in this way so that G_loss and D_loss have the same number of entries.
+                # We report D_loss in this way so that G_loss and D_loss have
+                # the same number of entries.
                 D_losses.append(np.mean(D_step_loss))
 
                 # TRAINING G: Zero out gradients for G
                 G_optimizer.zero_grad()
 
-                # Train the generator to (roughly) minimize the approximated Wasserstein distance
+                # Train the generator to (roughly) minimize the approximated
+                # Wasserstein distance
                 G_loss = self.train_G(images)
 
                 # Log results, update parameters
@@ -179,12 +191,11 @@ class WGANTrainer:
         """ Run 1 step of training for discriminator
 
         Input:
-            images: batch of images (reshaped to [batch_size, 784])
+            images: batch of images (reshaped to [batch_size, -1])
         Output:
             D_loss: wasserstein loss for discriminator,
             -E[D(x)] + E[D(G(z))]
         """
-
         # Sample from the generator
         noise = self.compute_noise(images.shape[0], self.model.z_dim)
         G_output = self.model.G(noise)
@@ -218,11 +229,11 @@ class WGANTrainer:
         return G_loss
 
     def compute_noise(self, batch_size, z_dim):
-        """ Compute random noise for the generator to learn to make images from """
+        """ Compute random noise for input into the Generator G """
         return to_cuda(torch.randn(batch_size, z_dim))
 
     def process_batch(self, iterator):
-        """ Generate a process batch to be input into the discriminator D """
+        """ Generate a process batch to be input into the Discriminator D """
         images, _ = next(iter(iterator))
         images = to_cuda(images.view(images.shape[0], -1))
         return images
@@ -242,14 +253,17 @@ class WGANTrainer:
         # Transform noise to image
         images = self.model.G(noise)
 
-        # Reshape to proper image size
-        images = images.view(images.shape[0], 28, 28, -1).squeeze()
+        # Reshape to square image size
+        images = images.view(images.shape[0],
+                             self.model.shape,
+                             self.model.shape,
+                             -1).squeeze()
 
         # Plot
         plt.close()
-        size_figure_grid, k = int(num_outputs**0.5), 0
-        fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
-        for i, j in product(range(size_figure_grid), range(size_figure_grid)):
+        grid_size, k = int(num_outputs**0.5), 0
+        fig, ax = plt.subplots(grid_size, grid_size, figsize=(5, 5))
+        for i, j in product(range(grid_size), range(grid_size)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
             ax[i,j].imshow(images[k].data.numpy(), cmap='gray')
@@ -262,7 +276,7 @@ class WGANTrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png'
-                                         %(epoch), nrow=size_figure_grid)
+                                         %(epoch), nrow=grid_size)
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
@@ -270,9 +284,15 @@ class WGANTrainer:
         plt.style.use('ggplot')
         plt.rcParams["figure.figsize"] = (8,6)
 
-        # Plot Discriminator loss in red, Generator loss in green
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Dlosses, 'r')
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Glosses, 'g')
+        # Plot Discriminator loss in red
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Dlosses,
+                 'r')
+
+        # Plot Generator loss in green
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Glosses,
+                 'g')
 
         # Add legend, title
         plt.legend(['Discriminator', 'Generator'])

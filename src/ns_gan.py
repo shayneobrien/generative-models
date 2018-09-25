@@ -1,19 +1,19 @@
-""" (NS GAN)
-Vanilla GAN using MLP architecture, non-saturating loss as laid out in the original paper.
-Compared to MM GAN, the only change is the generator's loss. In particular:
+""" (NS GAN) https://arxiv.org/abs/1406.2661
+Non-saturating GAN.
+
+From the abstract: 'We propose a new framework for estimating generative models
+via an adversarial process, in which we simultaneously train two models: a
+generative model G that captures the data distribution, and a discriminative
+model D that estimates the probability that a sample came from the training data
+rather than G. The training procedure for G is to maximize the probability of D
+making a mistake.'
+
+Compared to MM GAN, the only change is the generator's loss.
 
 NS GAN: L(G) = -E[log(D(G(z)))]
 MM GAN: L(G) =  E[log(1-D(G(z)))]
 
 In both NS GAN and MM GAN, the output of G can be interpretted as a probability.
-
-https://arxiv.org/abs/1406.2661
-
-From the abstract: 'We propose a new framework for estimating generative models via an
-adversarial process, in which we simultaneously train two models: a generative model G
-that captures the data distribution, and a discriminative model D that estimates
-the probability that a sample came from the training data rather than G. The training
-procedure for G is to maximize the probability of D making a mistake.'
 """
 
 import torch, torchvision
@@ -29,7 +29,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm
 
-from utils import *
+from .utils import *
 
 
 class Generator(nn.Module):
@@ -71,6 +71,8 @@ class NSGAN(nn.Module):
         self.G = Generator(image_size, hidden_dim, z_dim)
         self.D = Discriminator(image_size, hidden_dim, output_dim)
 
+        self.shape = int(image_size ** 0.5)
+
 
 class NSGANTrainer:
     """ Object to hold data iterators, train a GAN variant
@@ -90,18 +92,22 @@ class NSGANTrainer:
         self.num_epochs = 0
 
     def train(self, num_epochs, G_lr=2e-4, D_lr=2e-4, D_steps=1):
-        """ Train a vanilla GAN using the non-saturating gradients loss for the generator.
-            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
+        """ Train a vanilla GAN using non-saturating gradients loss.
+
+            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations
+            of Generator output.
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            G_lr: float, learning rate for generator's Adam optimizer (default 2e-4)
-            D_lr: float, learning rate for discriminator's Adam optimizer (default 2e-4)
-            D_steps: int, training step ratio for how often to train D compared to G (default 1)
+            G_lr: float, learning rate for generator's Adam optimizer
+            D_lr: float, learning rate for discriminator's Adam optimizer
+            D_steps: int, ratio for how often to train D compared to G
         """
         # Initialize optimizers
-        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
-        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
+        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters()
+                                        if p.requires_grad], lr=G_lr)
+        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters()
+                                        if p.requires_grad], lr=D_lr)
 
         # Approximate steps/epoch given D_steps per epoch
         # --> roughly train in the same way as if D_step (1) == G_step (1)
@@ -167,7 +173,7 @@ class NSGANTrainer:
         """ Run 1 step of training for discriminator
 
         Input:
-            images: batch of images (reshaped to [batch_size, 784])
+            images: batch of images (reshaped to [batch_size, -1])
         Output:
             D_loss: non-saturing loss for discriminator,
             -E[log(D(x))] - E[log(1 - D(G(z)))]
@@ -197,12 +203,14 @@ class NSGANTrainer:
             -E[log(D(G(z)))]
         """
 
-        # Get noise (denoted z), classify it using G, then classify the output of G using D.
+        # Get noise (denoted z), classify it using G, then classify the output
+        # of G using D.
         noise = self.compute_noise(images.shape[0], self.model.z_dim) # (z)
         G_output = self.model.G(noise) # G(z)
         DG_score = self.model.D(G_output) # D(G(z))
 
-        # Compute the non-saturating loss for how D did versus the generations of G using sigmoid cross entropy
+        # Compute the non-saturating loss for how D did versus the generations
+        # of G using sigmoid cross entropy
         G_loss = -torch.mean(torch.log(DG_score + 1e-8))
 
         return G_loss
@@ -228,14 +236,17 @@ class NSGANTrainer:
         # Transform noise to image
         images = self.model.G(noise)
 
-        # Reshape to proper image size
-        images = images.view(images.shape[0], 28, 28, -1).squeeze()
+        # Reshape to square image size
+        images = images.view(images.shape[0],
+                             self.model.shape,
+                             self.model.shape,
+                             -1).squeeze()
 
         # Plot
         plt.close()
-        size_figure_grid, k = int(num_outputs**0.5), 0
-        fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
-        for i, j in product(range(size_figure_grid), range(size_figure_grid)):
+        grid_size, k = int(num_outputs**0.5), 0
+        fig, ax = plt.subplots(grid_size, grid_size, figsize=(5, 5))
+        for i, j in product(range(grid_size), range(grid_size)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
             ax[i,j].imshow(images[k].data.numpy(), cmap='gray')
@@ -248,7 +259,7 @@ class NSGANTrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png'
-                                         %(epoch), nrow=size_figure_grid)
+                                         %(epoch), nrow=grid_size)
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
@@ -257,8 +268,12 @@ class NSGANTrainer:
         plt.rcParams["figure.figsize"] = (8,6)
 
         # Plot Discriminator loss in red, Generator loss in green
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Dlosses, 'r')
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Glosses, 'g')
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Dlosses,
+                 'r')
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Glosses,
+                 'g')
 
         # Add legend, title
         plt.legend(['Discriminator', 'Generator'])

@@ -164,7 +164,7 @@ class AutoencoderTrainer:
         return np.mean([self.compute_batch(batch).item() for batch in iterator])
 
     def reconstruct_images(self, images, epoch, save=True):
-        """Reconstruct a fixed input at each epoch for progress visualization"""
+        """ Reconstruct a fixed input at each epoch for progress viz """
         # Reshape images, pass through model, reshape reconstructed output
         batch = to_cuda(images.view(images.shape[0], -1))
         reconst_images = self.model(batch)
@@ -172,9 +172,9 @@ class AutoencoderTrainer:
 
         # Plot
         plt.close()
-        size_figure_grid, k = int(reconst_images.shape[0]**0.5), 0
-        fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
-        for i, j in product(range(size_figure_grid), range(size_figure_grid)):
+        grid_size, k = int(reconst_images.shape[0]**0.5), 0
+        fig, ax = plt.subplots(grid_size, grid_size, figsize=(5, 5))
+        for i, j in product(range(grid_size), range(grid_size)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
             ax[i,j].imshow(reconst_images[k].data.numpy(), cmap='gray')
@@ -187,10 +187,10 @@ class AutoencoderTrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(self.debugging_image.data,
                                          outname + 'real.png',
-                                         nrow=size_figure_grid)
+                                         nrow=grid_size)
             torchvision.utils.save_image(reconst_images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png' %(epoch),
-                                         nrow=size_figure_grid)
+                                         nrow=grid_size)
 
     def viz_loss(self):
         """ Visualize reconstruction loss """

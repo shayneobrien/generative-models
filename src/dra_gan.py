@@ -1,20 +1,16 @@
-""" (DRAGAN)
+""" (DRAGAN) https://arxiv.org/abs/1705.07215
 Deep Regret Analytic GAN
 
-https://arxiv.org/abs/1705.07215.pdf
+The output of DRAGAN's D can be interpretted as a probability, similarly to
+MMGAN and NSGAN. DRAGAN is similar to WGANGP, but seems less stable.
 
-The output of DRAGAN's D can be interpretted as a probability, similarly to MMGAN
-and NSGAN.
-
-Proposes to study GANs from a regret minimization perspective. This implementation is
-very similar to WGAN GP, in that it is applying a gradient penalty to try and get at
-an improved training objective based on how D and G would optimally perform. They apply
-the gradient penalty only close to the real data manifold (whereas WGAN GP picks the
-gradient location on a random line between a real and randomly generated fake sample).
-For further details, see Section 2.5 of the paper.
-
-DRAGAN is very similar to WGANGP, but seems much less stable. I would spend more time on
-WGANGP than DRAGAN.
+Proposes to study GANs from a regret minimization perspective. This
+model is very similar to WGAN GP, in that it is applying a gradient penalty to
+try and get at an improved training objective based on how D and G would
+optimally perform. They apply the gradient penalty only close to the real data
+manifold (whereas WGAN GP picks the gradient location on a random line between
+a real and randomly generated fake sample). For further details, see
+Section 2.5 of the paper.
 """
 
 import torch, torchvision
@@ -30,7 +26,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm
 
-from utils import *
+from .utils import *
 
 
 class Generator(nn.Module):
@@ -75,6 +71,8 @@ class DRAGAN(nn.Module):
         self.G = Generator(image_size, hidden_dim, z_dim)
         self.D = Discriminator(image_size, hidden_dim, output_dim)
 
+        self.shape = int(image_size ** 0.5)
+
 
 class DRAGANTrainer:
     """ Object to hold data iterators, train a GAN variant
@@ -95,17 +93,21 @@ class DRAGANTrainer:
 
     def train(self, num_epochs, G_lr=1e-4, D_lr=1e-4, D_steps=5):
         """ Train a Deep Regret Analytic GAN
-            Logs progress using G loss, D loss, G(x), D(G(x)), visualizations of Generator output.
+
+            Logs progress using G loss, D loss, G(x), D(G(x)),
+            visualizations of Generator output.
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            G_lr: float, learning rate for generator's Adam optimizer (default 1e-4)
-            D_lr: float, learning rate for discriminator's Adam optimizer (default 1e-4)
-            D_steps: int, training step ratio for how often to train D compared to G (default 5)
+            G_lr: float, learning rate for generator's Adam optimizer
+            D_lr: float, learning rate for discriminator's Adam optimizer
+            D_steps: int, ratio for how often to train D compared to G
         """
         # Initialize optimizers
-        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
-        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
+        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters()
+                                        if p.requires_grad], lr=G_lr)
+        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters()
+                                        if p.requires_grad], lr=D_lr)
 
         # Approximate steps/epoch given D_steps per epoch
         # --> roughly train in the same way as if D_step (1) == G_step (1)
@@ -129,8 +131,8 @@ class DRAGANTrainer:
                     # TRAINING D: Zero out gradients for D
                     D_optimizer.zero_grad()
 
-                    # Train the discriminator to approximate the Wasserstein distance between real, generated
-                    # distributions
+                    # Train the discriminator to approximate the Wasserstein
+                    # distance between real, generated distributions
                     D_loss = self.train_D(images)
 
                     # Update parameters
@@ -140,13 +142,14 @@ class DRAGANTrainer:
                     # Log results, backpropagate the discriminator network
                     D_step_loss.append(D_loss.item())
 
-                # We report D_loss in this way so that G_loss and D_loss have the same number of entries.
+                # We report D_loss in this way so that G_loss and D_loss
+                # have the same number of entries.
                 D_losses.append(np.mean(D_step_loss))
 
                 # TRAINING G: Zero out gradients for G
                 G_optimizer.zero_grad()
 
-                # Train the generator to (roughly) minimize the approximated Wasserstein distance
+                # Train the generator
                 G_loss = self.train_G(images)
 
                 # Log results, update parameters
@@ -173,12 +176,11 @@ class DRAGANTrainer:
 
         Input:
             model: model instantiation
-            images: batch of images (reshaped to [batch_size, 784])
+            images: batch of images (reshaped to [batch_size, -1])
         Output:
             D_loss: DRAGAN loss for discriminator,
             -E[log(D(x))] - E[log(1 - D(G(z)))] + λE[(||∇ D(G(z))|| - 1)^2]
         """
-
         # Classify the real batch images, get the loss for these
         DX_score = self.model.D(images)
 
@@ -186,11 +188,12 @@ class DRAGANTrainer:
         noise = self.compute_noise(images.shape[0], self.model.z_dim)
         G_output = self.model.G(noise)
 
-        # Classify the fake batch images, get the loss for these using sigmoid cross entropy
+        # Classify generated batch images
         DG_score = self.model.D(G_output)
 
         # Compute vanilla (original paper) D loss
-        D_loss = -torch.mean(torch.log(DX_score + 1e-8) + torch.log(1 - DG_score + 1e-8))
+        D_loss = -torch.mean(torch.log(DX_score + 1e-8) \
+                    + torch.log(1 - DG_score + 1e-8))
 
         # GRADIENT PENALTY STEPS:
         # Uniformly sample along one straight line per each batch entry.
@@ -198,21 +201,23 @@ class DRAGANTrainer:
 
         # Generate images from the noise, ensure unit
         G_interpolation = to_var(delta*images.data + (1-delta) *
-                                 (images.data + C*images.data.std() * to_cuda(torch.rand(images.size()))))
+                                 (images.data + C*images.data.std() \
+                                 * to_cuda(torch.rand(images.size()))))
 
         # Discriminate generator interpolation
         D_interpolation = self.model.D(G_interpolation)
+        interp_shape = D_interpolation.shape
 
         # Compute the gradients of D with respect to the noise generated input
-        gradients = torch.autograd.grad(outputs = D_interpolation,
-                                        inputs = G_interpolation,
-                                        grad_outputs = to_cuda(torch.ones(D_interpolation.size())),
-                                        only_inputs = True,
-                                        create_graph = True,
-                                        retain_graph = True)[0]
+        gradients = torch.autograd.grad(outputs=D_interpolation,
+                                        inputs=G_interpolation,
+                                        grad_outputs=to_cuda(torch.ones(interp_shape)),
+                                        only_inputs=True,
+                                        create_graph=True,
+                                        retain_graph=True)[0]
 
         # Full gradient penalty
-        grad_penalty = LAMBDA * torch.mean((gradients.norm(2, dim=1) - K)**2)
+        grad_penalty = LAMBDA*torch.mean((gradients.norm(2, dim=1)-K)**2)
 
         # Compute DRAGAN loss for D
         D_loss = D_loss + grad_penalty
@@ -227,29 +232,30 @@ class DRAGANTrainer:
         Output:
             G_loss: DRAGAN (non-saturating) loss for G, -E[log(D(G(z)))]
         """
-        # Get noise (denoted z), classify it using G, then classify the output of G using D.
+        # Get noise (denoted z), classify it using G, then classify the
+        # output of G using D.
         noise = self.compute_noise(images.shape[0], self.model.z_dim) # z
         G_output = self.model.G(noise) # G(z)
         DG_score = self.model.D(G_output) # D(G(z))
 
-        # Compute the non-saturating loss for how D did versus the generations of G using sigmoid cross entropy
+        # Compute the non-saturating loss for how D did versus the generations
+        # of G using sigmoid cross entropy
         G_loss = -torch.mean(torch.log(DG_score + 1e-8))
 
         return G_loss
 
     def compute_noise(self, batch_size, z_dim):
-        """ Compute random noise for the generator to learn to make images from """
+        """ Compute random noise for input into Generator G """
         return to_cuda(torch.randn(batch_size, z_dim))
 
     def process_batch(self, iterator):
-        """ Generate a process batch to be input into the discriminator D """
+        """ Generate a process batch to be input into the Discriminator D """
         images, _ = next(iter(iterator))
         images = to_cuda(images.view(images.shape[0], -1))
         return images
 
     def generate_images(self, epoch, num_outputs=36, save=True):
         """ Visualize progress of generator learning """
-
         # Turn off any regularization
         self.model.eval()
 
@@ -260,13 +266,16 @@ class DRAGANTrainer:
         images = self.model.G(noise)
 
         # Reshape to proper image size
-        images = images.view(images.shape[0], 28, 28, -1).squeeze()
+        images = images.view(images.shape[0],
+                             self.model.shape,
+                             self.model.shape,
+                             -1).squeeze()
 
         # Plot
         plt.close()
-        size_figure_grid, k = int(num_outputs**0.5), 0
-        fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
-        for i, j in product(range(size_figure_grid), range(size_figure_grid)):
+        grid_size, k = int(num_outputs**0.5), 0
+        fig, ax = plt.subplots(grid_size, grid_size, figsize=(5, 5))
+        for i, j in product(range(grid_size), range(grid_size)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
             ax[i,j].imshow(images[k].data.numpy(), cmap='gray')
@@ -279,7 +288,7 @@ class DRAGANTrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png'
-                                         %(epoch), nrow=size_figure_grid)
+                                         %(epoch), nrow=grid_size)
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
@@ -287,9 +296,15 @@ class DRAGANTrainer:
         plt.style.use('ggplot')
         plt.rcParams["figure.figsize"] = (8,6)
 
-        # Plot Discriminator loss in red, Generator loss in green
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Dlosses, 'r')
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Glosses, 'g')
+        # Plot Discriminator loss in red
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Dlosses,
+                 'r')
+
+        # Plot Generator loss in green
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Glosses,
+                 'g')
 
         # Add legend, title
         plt.legend(['Discriminator', 'Generator'])

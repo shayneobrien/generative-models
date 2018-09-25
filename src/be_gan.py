@@ -1,7 +1,5 @@
-""" (BEGAN)
+""" (BEGAN) https://arxiv.org/abs/1703.10717
 Boundary Equilibrium GAN
-
-https://arxiv.org/abs/1703.10717
 
 BEGAN uses an autoencoder as a discriminator and optimizes a lower bound of the
 Wasserstein distance between auto-encoder loss distributions on real and fake
@@ -44,7 +42,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm
 
-from utils import *
+from .utils import *
 
 
 class Generator(nn.Module):
@@ -89,6 +87,8 @@ class BEGAN(nn.Module):
         self.G = Generator(image_size, hidden_dim, z_dim)
         self.D = Discriminator(image_size, hidden_dim)
 
+        self.shape = int(image_size ** 0.5)
+
 
 class BEGANTrainer:
     def __init__(self, model, train_iter, val_iter, test_iter, viz=False):
@@ -114,21 +114,26 @@ class BEGANTrainer:
 
         Inputs:
             num_epochs: int, number of epochs to train for
-            G_lr: float, learning rate for generator's optimizer (default 1e-4)
-            D_lr: float, learning rate for discriminator's optimizer (default 1e-4)
-            D_steps: int, ratio for how often to train D compared to G (default 1)
-            GAMMA: float, balance equilibrium between G and D objectives (default 0.50)
-            LAMBDA: float, weight D loss for updating K (default 1e-3)
-            K: float, how much to initially emphasize loss(D(G(z))) in total D loss (default 0.00)
+            G_lr: float, learning rate for generator's optimizer
+            D_lr: float, learning rate for discriminator's optimizer
+            D_steps: int, ratio for how often to train D compared to G
+            GAMMA: float, balance equilibrium between G and D objectives
+            LAMBDA: float, weight D loss for updating K
+            K: float, how much to emphasize loss(D(G(z))) in initial D loss
         """
 
         # Adam optimizers
-        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters() if p.requires_grad], lr=G_lr)
-        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters() if p.requires_grad], lr=D_lr)
+        G_optimizer = optim.Adam(params=[p for p in self.model.G.parameters()
+                                        if p.requires_grad], lr=G_lr)
+        D_optimizer = optim.Adam(params=[p for p in self.model.D.parameters()
+                                        if p.requires_grad], lr=D_lr)
 
-        # Reduce learning rate by factor of 2 if convergence_metric stops decreasing by a threshold for last five epochs
-        G_scheduler = ReduceLROnPlateau(G_optimizer, factor=0.50, threshold=0.01, patience=5*len(self.train_iter))
-        D_scheduler = ReduceLROnPlateau(D_optimizer, factor=0.50, threshold=0.01, patience=5*len(self.train_iter))
+        # Reduce learning rate by factor of 2 if convergence_metric stops
+        # decreasing by a threshold for last five epochs
+        G_scheduler = ReduceLROnPlateau(G_optimizer, factor=0.50, threshold=0.01,
+                                        patience=5*len(self.train_iter))
+        D_scheduler = ReduceLROnPlateau(D_optimizer, factor=0.50, threshold=0.01,
+                                        patience=5*len(self.train_iter))
 
         # Approximate steps/epoch given D_steps per epoch
         # --> roughly train in the same way as if D_step (1) == G_step (1)
@@ -179,14 +184,15 @@ class BEGANTrainer:
                 # Save relevant output for progress logging
                 G_losses.append(G_loss.item())
 
-                # PROPORTIONAL CONTROL THEORY: Dynamically update K, log convergence measure
-                convergence_measure = (DX_loss + torch.abs(GAMMA*DX_loss - DG_loss)).item()
+                # PROPORTIONAL CONTROL THEORY: Dynamically update K,
+                # log convergence measure
+                convergence = (DX_loss+torch.abs(GAMMA*DX_loss-DG_loss)).item()
                 K_update = (K + LAMBDA*(GAMMA*DX_loss - DG_loss)).item()
                 K = min(max(0, K_update), 1)
 
                 # Learning rate scheduler
-                D_scheduler.step(convergence_measure)
-                G_scheduler.step(convergence_measure)
+                D_scheduler.step(convergence)
+                G_scheduler.step(convergence)
 
             # Save losses
             self.Glosses.extend(G_losses)
@@ -195,7 +201,7 @@ class BEGANTrainer:
             # Progress logging
             print ("Epoch[%d/%d], G Loss: %.4f, D Loss: %.4f, K: %.4f, Convergence Measure: %.4f"
                    %(epoch, num_epochs, np.mean(G_losses),
-                     np.mean(D_losses), K, convergence_measure))
+                     np.mean(D_losses), K, convergence))
             self.num_epochs += 1
 
             # Visualize generator progress
@@ -207,10 +213,11 @@ class BEGANTrainer:
         """ Run 1 step of training for discriminator
 
         Input:
-            images: batch of images (reshaped to [batch_size, 784])
+            images: batch of images (reshaped to [batch_size, -1])
             K: how much to emphasize loss(D(G(z))) in total D loss
         Output:
-            D_loss: BEGAN loss for discriminator, E[||x - AE(x)||1] - K*E[G(z) - AE(G(z))]
+            D_loss: BEGAN loss for discriminator,
+            E[||x-AE(x)||1] - K*E[G(z) - AE(G(z))]
         """
 
         # Reconstruct the images using D (autoencoder), get reconstruction loss
@@ -239,7 +246,8 @@ class BEGANTrainer:
             G_loss: BEGAN loss for G, E[||G(z) - AE(G(Z))||1]
         """
 
-        # Get noise, classify it using G, then reconstruct the output of G using D (autoencoder).
+        # Get noise, classify it using G, then reconstruct the output of G
+        # using D (autoencoder).
         noise = self.compute_noise(images.shape[0], self.model.z_dim) # z
         G_output = self.model.G(noise) # G(z)
         DG_reconst = self.model.D(G_output) # D(G(z))
@@ -250,7 +258,7 @@ class BEGANTrainer:
         return G_loss
 
     def compute_noise(self, batch_size, z_dim):
-        """ Compute random noise for the generator to learn to make images from """
+        """ Compute random noise for input into Generator G """
         return to_cuda(torch.randn(batch_size, z_dim))
 
     def process_batch(self, iterator):
@@ -272,13 +280,16 @@ class BEGANTrainer:
         images = self.model.G(noise)
 
         # Reshape to proper image size
-        images = images.view(images.shape[0], 28, 28)
+        images = images.view(images.shape[0],
+                             self.model.shape,
+                             self.model.shape,
+                             -1).squeeze()
 
         # Plot
         plt.close()
-        size_figure_grid = int(num_outputs**0.5)
-        fig, ax = plt.subplots(size_figure_grid, size_figure_grid, figsize=(5, 5))
-        for i, j in product(range(size_figure_grid), range(size_figure_grid)):
+        grid_size = int(num_outputs**0.5)
+        fig, ax = plt.subplots(grid_size, grid_size, figsize=(5, 5))
+        for i, j in product(range(grid_size), range(grid_size)):
             ax[i,j].get_xaxis().set_visible(False)
             ax[i,j].get_yaxis().set_visible(False)
             ax[i,j].cla()
@@ -291,7 +302,7 @@ class BEGANTrainer:
                 os.makedirs(outname)
             torchvision.utils.save_image(images.unsqueeze(1).data,
                                          outname + 'reconst_%d.png'
-                                         %(epoch), nrow=size_figure_grid)
+                                         %(epoch), nrow=grid_size)
 
     def viz_loss(self):
         """ Visualize loss for the generator, discriminator """
@@ -300,9 +311,15 @@ class BEGANTrainer:
         plt.style.use('ggplot')
         plt.rcParams["figure.figsize"] = (8,6)
 
-        # Plot Discriminator loss in red, Generator loss in green
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Dlosses, 'r')
-        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)), self.Glosses, 'g')
+        # Plot Discriminator loss in red
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Dlosses,
+                 'r')
+
+        # Plot Generator loss in green
+        plt.plot(np.linspace(1, self.num_epochs, len(self.Dlosses)),
+                 self.Glosses,
+                 'g')
 
         # Add legend, title
         plt.legend(['Discriminator', 'Generator'])
