@@ -37,7 +37,7 @@ import numpy as np
 from itertools import product
 from tqdm import tqdm
 
-from .utils import *
+from src import utils
 
 
 class Generator(nn.Module):
